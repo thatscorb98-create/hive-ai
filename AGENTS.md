@@ -4,6 +4,7 @@ You are working on an Android app that autonomous agents use to run a real busin
 
 ## Ground truth
 
+- **`AGENT_README.md` is the handoff for the coding agent.** Read it first, then update it on every version with what changed and the new build hash.
 - `docs/feature-checklist.md` is the product backlog. Update the status column when you ship something; do not mark a feature done without a build that exercises it.
 - `docs/product-spec.md` holds the behaviour that must not drift.
 - `docs/apk-2.9.0-analysis.md` describes the last shipped build.
@@ -31,8 +32,15 @@ You are working on an Android app that autonomous agents use to run a real busin
 
 - `./gradlew clean assembleDebug` passes from a source-only copy.
 - App installs over the previous build and the stored keys still work.
-- The relevant checklist line is updated in the same commit.
+- `AGENT_README.md`, `CHANGELOG.md` and the README status table are updated in the same version.
 - Commit message: `feat|fix|chore(scope): summary`, body explains why.
+
+## This version's invariants
+
+- `TeamEngine.runMission` dispatches tasks **in parallel** (`coroutineScope` + `async`). Do not turn it back into a sequential loop; the owner asked for simultaneous API work.
+- `ModelRouter` routes lead/product to Super, research/sales/marketing/showcase to Lightning, and the proofreader to DeepSeek. Keep a manual override and the Setup switch.
+- The company loop belongs to `HiveViewModel.startLoop()`. It must stop when Autopilot is off and back off after a wholly failed shift. Paid, undelivered work is always the first mission.
+- `deliver_work` is the only path that closes a delivered job; `record_sale` means payment received.
 
 ## Do not
 

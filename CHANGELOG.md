@@ -1,5 +1,34 @@
 # Changelog
 
+## v2.12.0+19 — 2026-11-23
+
+The company runs a continuous sales loop, the crew works in parallel on different models, and the hive deck shows the traffic.
+
+**Added**
+- **Hive deck** (`HiveVizScreen`): a tilted pseudo-3D orbit with depth-scaled bots, glowing packets for every recent message, a live/idle badge, a message flow list, and a per-bot work distribution panel with the model each bot is on. Tap a bot to trace only its traffic.
+- `agent/ModelRouter.kt`: lead and product use Super, research/sales/marketing/showcase use Lightning, proofreader uses DeepSeek. `Agent.model` overrides and Setup has a route-models switch.
+- **Continuous company loop** in `HiveViewModel`: while autopilot is on and the process is alive, the team runs a shift every 45 seconds. `nextCompanyMission` walks the funnel: paid delivery, missing contact research, create an offer, make samples, outreach, follow-up, new leads. All-failed shifts wait five minutes.
+- `create_sample` tool, `Deliverable.isSample`, a Showcase role, and a SAMPLES section in Business, so buyers can see the work before paying.
+- `Prospect.paid`/`delivered` and the `deliver_work` tool. `record_sale` records payment; `deliver_work` saves the finished work and closes the job. Manual advance to WON marks paid.
+- Live pipeline snapshot in every system prompt: lead company, stage, email, paid/delivered, value, samples and sales totals.
+- `AGENT_README.md`: the living handoff a coding agent must read and update each version.
+
+**Changed**
+- `TeamEngine.runMission` now dispatches all planned tasks at the same time with `coroutineScope`/`async`; the old sequential for-loop is gone. Approval dialogs are serialized with a `Mutex`; the calls after approval still run in parallel.
+- The team is told to hand work to another bot with `message_teammate`, and to deliver paid work before hunting new leads.
+- The Showcase bot is part of the hiring instructions and the shared business facts.
+- Setup copy now describes the loop and the per-role model switch.
+
+**Verified**
+- `gradle clean :app:assembleDebug` succeeds: debug APK **28,089,497 bytes**, SHA-256 `049b3cda148264ed1585fee193704421e3a787238da19752f92ac95e4e469db6`.
+- Not verified on a device or emulator: **no screen has been run**. The deck, loop, parallel calls, samples and delivery are compiled, not exercised.
+
+**Known limits**
+- The foreground loop spends API credits while the app process is alive; turn Autopilot off to stop it. There is no daily cap yet.
+- Parallel tasks assigned to the same bot can interleave messages.
+- Stripe payments are recorded by the bot or the human; there is no webhook listener.
+- One browser window and one cookie jar for the whole app.
+
 ## v2.11.0+18 — 2026-11-23
 
 The company now starts with one lead bot who builds the team, and it runs itself.
