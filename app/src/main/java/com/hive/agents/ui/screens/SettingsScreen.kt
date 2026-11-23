@@ -55,6 +55,7 @@ fun SettingsScreen(
     var business by remember(state.settings) { mutableStateOf(state.settings.businessName) }
     var ein by remember(state.settings) { mutableStateOf(state.settings.businessEin) }
     var goal by remember(state.settings) { mutableStateOf(state.settings.goal) }
+    var blocklist by remember(state.settings) { mutableStateOf(state.settings.emailBlocklist) }
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         item {
@@ -144,10 +145,21 @@ fun SettingsScreen(
             LabeledField("EIN", ein) { ein = it }
             Spacer(Modifier.height(6.dp))
             LabeledField("Standing goal", goal, singleLine = false) { goal = it }
+            Spacer(Modifier.height(6.dp))
+            LabeledField(
+                "Do not email (comma separated)",
+                blocklist,
+                singleLine = false
+            ) { blocklist = it }
             Spacer(Modifier.height(8.dp))
             Button(onClick = {
                 onSaveSettings(
-                    state.settings.copy(businessName = business, businessEin = ein, goal = goal)
+                    state.settings.copy(
+                        businessName = business,
+                        businessEin = ein,
+                        goal = goal,
+                        emailBlocklist = blocklist
+                    )
                 )
             }) { Text("Save business") }
         }
