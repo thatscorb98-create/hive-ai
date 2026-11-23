@@ -251,22 +251,31 @@ data class HiveState(
     val revenueCents: Long get() = prospects.filter { it.stage == ProspectStage.WON }.sumOf { it.valueCents }
 }
 
-/** Model ids available on the free NVIDIA endpoint. */
+/**
+ * Model ids available on the free NVIDIA endpoint. NVIDIA retires ids without notice, so the
+ * client also checks /v1/models at runtime and falls back instead of trusting this list forever.
+ */
 object Models {
     const val LIGHTNING = "nvidia/nemotron-3.5-lightning-30b-a3b"
     const val SUPER = "nvidia/nemotron-3-super-120b-a12b"
-    const val ULTRA = "nvidia/nemotron-3-ultra-550b-a55b"
-    const val DEEPSEEK = "deepseek-ai/deepseek-v4.1-flash"
+    const val DEEPSEEK = "deepseek-ai/deepseek-v4-flash"
 
     const val DEFAULT = LIGHTNING
 
-    val all = listOf(LIGHTNING, SUPER, ULTRA, DEEPSEEK)
+    val all = listOf(LIGHTNING, SUPER, DEEPSEEK)
+
+    /** Saved settings from 2.12 and older may point at ids NVIDIA has removed. */
+    fun migrate(id: String): String = when (id) {
+        "deepseek-ai/deepseek-v4.1-flash",
+        "deepseek-ai/deepseek-v4-flash-0731" -> DEEPSEEK
+        "nvidia/nemotron-3-ultra-550b-a55b" -> SUPER
+        else -> id
+    }
 
     fun label(id: String): String = when (id) {
         LIGHTNING -> "Nemotron 3.5 Lightning"
         SUPER -> "Nemotron 3 Super"
-        ULTRA -> "Nemotron 3 Ultra"
-        DEEPSEEK -> "DeepSeek v4.1 Flash"
+        DEEPSEEK -> "DeepSeek v4 Flash"
         else -> id.substringAfterLast('/')
     }
 }
