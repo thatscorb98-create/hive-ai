@@ -35,9 +35,13 @@ You are working on an Android app that autonomous agents use to run a real busin
 - `AGENT_README.md`, `CHANGELOG.md` and the README status table are updated in the same version.
 - Commit message: `feat|fix|chore(scope): summary`, body explains why.
 
-## This version's invariants (2.13.2)
+## This version's invariants (2.13.3)
 
-- `TeamEngine.runMission` dispatches tasks **in parallel** (`coroutineScope` + `async`). Do not turn it back into a sequential loop; the owner asked for simultaneous API work.
+- `TeamEngine.runMission` dispatches tasks **in parallel** (`coroutineScope` + `async`) inside each wave. Do not turn it back into a sequential loop; the owner asked for simultaneous API work.
+- **A shift never collapses into one task for one bot.** `planTasks` falls back to `rosterPlan` (stage-relevant specialists + least-recently-used fill + the boss's coordination job) and `mergePlan` tops up partial model plans. `MAX_TASKS = 5` per shift. An unmatched JSON role must never be dumped on the first specialist.
+- **The boss delegates visibly.** `announcePlan` posts the shift plan and DMs every assigned bot before work starts. A message from the owner to the primary bot goes through `takeOrder` and becomes a full team mission, not a one-bot reply.
+- Waves are 0 = plan/research/offer/sample, 1 = sales/product, 2 = proofreading; each wave receives earlier output via `completedWork()` so bots hand off instead of working blind.
+- `search_web` order is Google Custom Search (only when `googleSearchKey` + `googleSearchCx` are in the vault), then DuckDuckGo, then Bing RSS. Never hardcode a Google key.
 - `ModelRouter` routes lead/product to Super, research/sales/marketing/showcase to Lightning, and the proofreader to DeepSeek. Keep a manual override and the Setup switch.
 - **Model ids must be resolved against `/v1/models`.** `deepseek-ai/deepseek-v4.1-flash` is retired; the current id is `deepseek-ai/deepseek-v4-flash`. `NimClient` must throw on HTTP/parse/empty failures, never return an error string as bot content, and must keep the 404/410 fallback.
 - The company loop belongs to `HiveViewModel.startLoop()`. It must stop when Autopilot is off and back off after a wholly failed shift. Paid, undelivered work is always the first mission.
@@ -49,6 +53,7 @@ You are working on an Android app that autonomous agents use to run a real busin
 - **Tool calls stay real tool calls.** Echo the assistant's `tool_calls` and answer each one with `role: "tool"` plus its `tool_call_id`. Never replace the call with "Calling tools." or send the result as a user message; the model loses track of which call finished and repeats it.
 - **Reasoning models need room.** Keep the planner at 3,000 tokens and tool calls at 8,192 or more. An empty 200 response must retry at twice the budget, then on another live model; it must never become bot content.
 - **A search challenge is not "no results."** `search_web` tries DuckDuckGo, then Bing RSS, and returns titles, links and snippets. Keep the city/region hint for local lead research.
+- **`HiveStore.update` caps history.** 600 messages, 400 tasks, 800 memory entries, 200 inbox items. Pipeline, products, deliverables and paid work are never trimmed.
 
 ## Do not
 
