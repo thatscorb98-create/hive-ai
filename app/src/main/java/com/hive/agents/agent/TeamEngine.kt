@@ -1,15 +1,21 @@
 package com.hive.agents.agent
 
 import com.hive.agents.data.Agent
+import com.hive.agents.data.HiveState
 import com.hive.agents.data.HiveStore
 import com.hive.agents.data.MemoryKind
 import com.hive.agents.data.Message
 import com.hive.agents.data.MessageKind
 import com.hive.agents.data.Mission
 import com.hive.agents.data.MissionStatus
+import com.hive.agents.data.ProspectStage
 import com.hive.agents.data.Task
 import com.hive.agents.data.TaskStatus
 import com.hive.agents.net.NimClient
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import org.json.JSONArray
 import java.util.UUID
 
@@ -75,9 +81,10 @@ class TeamEngine(
             )
         )
 
+        val model = ModelRouter.forAgent(agent, store.snapshot().settings)
         var last = ""
         repeat(6) {
-            val reply = nim.chat(messages, tools.specs)
+            val reply = nim.chat(messages, tools.specs, model = model)
             if (reply.content.isNotBlank()) last = reply.content
             if (reply.calls.isEmpty()) return last.ifBlank { "..." }
 
@@ -102,34 +109,14 @@ class TeamEngine(
         val planned = planTasks(mission, team)
         store.update { s -> s.copy(tasks = s.tasks + planned) }
 
-        var failed = false
-        for (task in planned) {
-            val agent = store.snapshot().agent(task.assigneeId)
-                ?: team.firstOrNull { !it.primary }
-                ?: team.firstOrNull()
-                ?: break
-
-            updateTask(task.id) { it.copy(assigneeId = agent.id, status = TaskStatus.RUNNING) }
-            say(agent, "On it: ${task.title}", missionId, kind = MessageKind.SYSTEM)
-
-            runCatching { dispatch(agent, task, mission) }
-                .onSuccess { result ->
-                    updateTask(task.id) { it.copy(status = TaskStatus.DONE, output = result) }
-                    say(agent, result, missionId)
-                }
-                .onFailure { error ->
-                    failed = true
-                    val message = error.message ?: "unknown error"
-                    updateTask(task.id) { it.copy(status = TaskStatus.FAILED, output = message) }
-                    memory.lesson(
-                        agent.id,
-                        "Task \"${task.title}\" failed: $message",
-                        "Read the tool output before retrying, and never repeat a call that already failed the same way."
-                    )
-                    suggestions.fromFailure(agent, task.title, message)
-                    say(agent, "Blocked: $message", missionId, kind = MessageKind.SYSTEM)
-                }
+        // Every task is dispatched at the same time, so research, outreach, product work and
+        // proofreading overlap instead of waiting in a queue. Each bot calls its own model.
+        val results = coroutineScope {
+            planned.map { task ->
+                async(Dispatchers.IO) { executeTask(task, mission, team) }
+            }.awaitAll()
         }
+        val failed = results.any { !it }
 
         val summary = store.snapshot().tasks.filter { it.missionId == missionId }
             .joinToString("\n") { "- ${it.title}: ${it.status.name.lowercase()}" }
@@ -206,12 +193,15 @@ class TeamEngine(
             Team:
             $roster
 
-            Break the mission into 2-4 concrete tasks. Reply with a JSON array only, each item:
+            Break the mission into 2-4 concrete tasks that can run in parallel. Reply with a JSON array only, each item:
             {"title":"short task","detail":"what done looks like","role":"role from the team"}
         """.trimIndent()
 
-        val reply = nim.chat(listOf(NimClient.Msg("system", prompt)), maxTokens = 500)
-        val parsed = parseTasks(reply.content, team)
+        val lead = team.firstOrNull { it.primary }
+        val model = lead?.let { ModelRouter.forAgent(it, store.snapshot().settings) }
+            ?: store.snapshot().settings.model
+        val reply = nim.chat(listOf(NimClient.Msg("system", prompt)), model = model, maxTokens = 500)
+        val parsed = parseTasks(reply.content, team).map { it.copy(missionId = mission.id) }
         if (parsed.isNotEmpty()) return parsed
 
         val fallbackAgent = team.firstOrNull { !it.primary } ?: team.first()
@@ -226,8 +216,40 @@ class TeamEngine(
         )
     }
 
+    private suspend fun executeTask(task: Task, mission: Mission, team: List<Agent>): Boolean {
+        val agent = store.snapshot().agent(task.assigneeId)
+            ?: team.firstOrNull { !it.primary }
+            ?: team.firstOrNull()
+            ?: return false
+
+        updateTask(task.id) { it.copy(assigneeId = agent.id, status = TaskStatus.RUNNING) }
+        say(agent, "On it: ${task.title}", mission.id, kind = MessageKind.SYSTEM)
+
+        return runCatching { dispatch(agent, task, mission) }
+            .fold(
+                onSuccess = { result ->
+                    updateTask(task.id) { it.copy(status = TaskStatus.DONE, output = result) }
+                    say(agent, result, mission.id)
+                    true
+                },
+                onFailure = { error ->
+                    val message = error.message ?: "unknown error"
+                    updateTask(task.id) { it.copy(status = TaskStatus.FAILED, output = message) }
+                    memory.lesson(
+                        agent.id,
+                        "Task \"${task.title}\" failed: $message",
+                        "Read the tool output before retrying, and never repeat a call that already failed the same way."
+                    )
+                    suggestions.fromFailure(agent, task.title, message)
+                    say(agent, "Blocked: $message", mission.id, kind = MessageKind.SYSTEM)
+                    false
+                }
+            )
+    }
+
     private suspend fun dispatch(agent: Agent, task: Task, mission: Mission): String {
         val building = store.snapshot().agents.size <= 1
+        val model = ModelRouter.forAgent(agent, store.snapshot().settings)
         val messages = mutableListOf(
             NimClient.Msg("system", systemPrompt(agent)),
             NimClient.Msg(
@@ -239,7 +261,7 @@ class TeamEngine(
                     if (task.detail.isNotBlank()) appendLine(task.detail)
                     if (building) {
                         appendLine()
-                        appendLine("You are the only bot right now. Before doing the work, hire the people this company needs with hire_agent: marketing, research, sales, product and a proofreader. You can hire more than one person per function.")
+                        appendLine("You are the only bot right now. Before doing the work, hire the people this company needs with hire_agent: marketing, research, sales, product, a showcase bot and a proofreader. You can hire more than one person per function.")
                     }
                     val guard = memory.guardrails(agent.id, "${mission.title} ${task.title}")
                     if (guard.isNotBlank()) {
@@ -254,7 +276,7 @@ class TeamEngine(
 
         var last = ""
         repeat(5) {
-            val reply = nim.chat(messages, tools.specs)
+            val reply = nim.chat(messages, tools.specs, model = model)
             if (reply.content.isNotBlank()) last = reply.content
             if (reply.calls.isEmpty()) return last.ifBlank { "Done." }
 
@@ -271,6 +293,7 @@ class TeamEngine(
         val state = store.snapshot()
         val facts = memory.sharedFacts().joinToString("\n") { "- ${it.text}" }
         val products = state.products.take(8).joinToString("\n") { "- ${it.name} ($${it.priceCents / 100.0})" }
+        val pipeline = pipelineSnapshot(state)
         val team = state.agents.joinToString("\n") { "- ${it.name} :: ${it.role}" }
         return buildString {
             appendLine("You work for ${state.settings.businessName}, a registered business that sells digital goods and AI-run services.")
@@ -280,11 +303,18 @@ class TeamEngine(
             if (agent.primary) {
                 appendLine()
                 appendLine("You are running ${state.settings.businessName}. You are the boss: you decide what to sell, who to hire and how the company makes money.")
-                appendLine("You started alone. Build the company with hire_agent: a marketing team, a research team, a sales team, a product team and a proofreader. Hire more people whenever the work needs them.")
+                appendLine("You started alone. Build the company with hire_agent: a marketing team, a research team, a sales team, a product team, a showcase bot and a proofreader. Hire more people whenever the work needs them.")
             }
+            appendLine("The company runs a continuous loop: market research, lead lists, qualification, outreach, follow-up, payment, then delivery. Keep moving to the next stage without waiting to be asked.")
+            appendLine("Once a buyer has paid, do the work, save it, and mark the job delivered with deliver_work. Never leave a paid customer waiting.")
+            appendLine("The showcase bot turns what the company sells into samples buyers can see. Use create_sample for every reusable sample.")
             if (products.isNotBlank()) {
                 appendLine("Current products:")
                 appendLine(products)
+            }
+            if (pipeline.isNotBlank()) {
+                appendLine()
+                appendLine(pipeline)
             }
             if (team.isNotBlank()) {
                 appendLine("The team:")
@@ -298,8 +328,31 @@ class TeamEngine(
                 appendLine("Business facts:")
                 appendLine(facts)
             }
-            appendLine("You share a team chat with the other bots, and you can message any of them with message_teammate.")
+            appendLine("You share a team chat with the other bots, and you can message any of them with message_teammate. When another bot has to continue your work, message them the handoff before you finish.")
             appendLine("Be concrete, use tools, never invent results. A payment link or an email that costs money still needs human approval if the human has asked for it.")
+        }
+    }
+
+    /** The live funnel every bot needs before it can research, sell or deliver anything. */
+    private fun pipelineSnapshot(state: HiveState): String {
+        val open = state.prospects
+            .filter { it.stage != ProspectStage.LOST }
+            .sortedByDescending { it.updatedAt }
+            .take(20)
+        val samples = state.deliverables.filter { it.isSample }.take(5)
+        if (open.isEmpty() && samples.isEmpty()) return ""
+        return buildString {
+            appendLine("Live pipeline:")
+            open.forEach { p ->
+                appendLine(
+                    "- ${p.company} | ${p.stage.name.lowercase()} | email: ${p.email.ifBlank { "missing" }} | " +
+                        "paid: ${p.paid} | delivered: ${p.delivered} | value: ${p.valueCents / 100.0} | ${p.notes.take(70)}"
+                )
+            }
+            if (samples.isNotEmpty()) {
+                appendLine("Samples ready: ${samples.joinToString { it.title }}")
+            }
+            appendLine("Sales made: ${state.salesMade}; collected: ${state.revenueCents / 100.0}")
         }
     }
 
@@ -401,6 +454,9 @@ class TeamEngine(
             "The company gets paid through the human's Stripe account. A payment link is created only when a customer is ready to buy, never before.",
             "Sales bots build lead lists of real businesses, verify contact details, contact them, and record every closed deal with record_sale. No invented contacts, results or claims.",
             "A proofreader reviews every outbound email and product description before it is sent or published, so the writing sounds human.",
+            "The company runs a continuous loop: research real leads, decide what each one needs, contact them, close the sale, then deliver the work after payment. A showcase bot makes samples of the work so buyers can see it before they pay.",
+            "The team works in parallel and routes work to different models by role: the lead and product bot use the strong model, research and sales use the fast model, the proofreader uses the cheap model.",
+            "Once a customer has paid, do the work, save it, and mark the job delivered with deliver_work. A paying customer comes before a new lead.",
             "Progress is measured by sales actually made and money collected, not by how busy the bots look.",
             "Each bot has its own browser window and can ask the human to sign in when a site needs it.",
             "The company's EIN and API keys live on this device. Never print, email, share or repeat them."
