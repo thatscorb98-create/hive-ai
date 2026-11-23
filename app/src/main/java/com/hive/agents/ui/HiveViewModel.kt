@@ -19,13 +19,9 @@ import com.hive.agents.data.MessageKind
 import com.hive.agents.data.Mission
 import com.hive.agents.data.MissionStatus
 import com.hive.agents.data.Models
-import com.hive.agents.data.Product
-import com.hive.agents.data.Prospect
 import com.hive.agents.data.ProspectStage
-import com.hive.agents.data.Service
 import com.hive.agents.data.Settings
 import com.hive.agents.data.VaultKeys
-import com.hive.agents.net.NimClient
 import com.hive.agents.service.AutopilotWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,7 +41,6 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
     private val approvals = graph.approvals
     private val mail = graph.mail
     private val stripe = graph.stripe
-    private val nim = graph.nim
     private val suggestions = graph.suggestions
     private val engine = graph.engine
 
@@ -68,17 +63,39 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
     private val _selectedMission = MutableStateFlow<String?>(null)
     val selectedMission: StateFlow<String?> = _selectedMission.asStateFlow()
 
+    private var lastAutoKick = 0L
+
     init {
         engine.bootstrap()
         scheduleAutopilot()
+    }
+
+    /**
+     * Called every time the app comes to the front. If autopilot is on and the last shift was
+     * more than ten minutes ago, the team starts working without being asked.
+     */
+    fun onAppForeground() {
+        val current = store.snapshot()
+        if (!current.settings.autopilot) return
+        if (!vault.load().hasNim) return
+        val now = System.currentTimeMillis()
+        if (now - current.settings.lastShiftAt < 10 * 60_000L) return
+        if (now - lastAutoKick < 60_000L) return
+        lastAutoKick = now
+        runShift()
     }
 
     // ---------- setup ----------
 
     fun saveKeys(newKeys: VaultKeys) {
         vault.save(newKeys)
-        _keys.value = vault.load()
-        _notice.value = "Keys saved to the encrypted vault."
+        val reloaded = vault.load()
+        _keys.value = reloaded
+        _notice.value = if (reloaded == newKeys) {
+            "Keys saved to the encrypted vault, with a backup copy."
+        } else {
+            "The vault could not be read back after saving. Try again before closing the app."
+        }
     }
 
     fun updateSettings(settings: Settings) {
@@ -86,8 +103,13 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setAutopilot(enabled: Boolean) {
-        store.update { it.copy(settings = it.settings.copy(autopilot = enabled)) }
-        if (enabled) scheduleAutopilot()
+        store.update {
+            it.copy(settings = it.settings.copy(autopilot = enabled, autopilotDefaulted = true))
+        }
+        if (enabled) {
+            scheduleAutopilot()
+            onAppForeground()
+        }
     }
 
     fun dismissNotice() {
@@ -114,7 +136,9 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
     /** Human-triggered shift. Same code path the worker uses. */
     fun runShift() {
         if (_busy.value) return
+        engine.bootstrap()
         val stateNow = store.snapshot()
+        store.update { it.copy(settings = it.settings.copy(lastShiftAt = System.currentTimeMillis())) }
         val next = stateNow.missions.firstOrNull {
             it.status == MissionStatus.PLANNED || it.status == MissionStatus.RUNNING
         } ?: Mission(
@@ -173,6 +197,45 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Delete a bot. Its past messages stay as history; a new lead starts if the team empties. */
+    fun deleteAgent(id: String) {
+        val stateNow = store.snapshot()
+        val target = stateNow.agent(id) ?: return
+        val remaining = stateNow.agents.filterNot { it.id == id }
+
+        if (remaining.isEmpty()) {
+            store.update {
+                it.copy(
+                    agents = emptyList(),
+                    memory = it.memory.filterNot { entry -> entry.agentId == id },
+                    automations = it.automations.filterNot { automation -> automation.agentId == id }
+                )
+            }
+            engine.bootstrap()
+            _notice.value = "${target.name} deleted. A new lead started so the company keeps running."
+            return
+        }
+
+        val promoted = if (remaining.none { it.primary }) {
+            val lead = remaining.first()
+            remaining.map { if (it.id == lead.id) it.copy(primary = true) else it }
+        } else {
+            remaining
+        }
+        store.update { state ->
+            state.copy(
+                agents = promoted,
+                memory = state.memory.filterNot { entry -> entry.agentId == id },
+                automations = state.automations.filterNot { automation -> automation.agentId == id }
+            )
+        }
+        _notice.value = "${target.name} deleted, along with its memory."
+    }
+
+    /**
+     * A human message is a real work order: the bot can call tools (hire, add leads, create a
+     * product, proofread) while it answers, not just talk about it.
+     */
     fun messageAgent(agentId: String, text: String) {
         if (text.isBlank()) return
         val agent = store.snapshot().agent(agentId) ?: store.snapshot().orchestrator ?: return
@@ -180,24 +243,14 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _busy.value = true
             runCatching {
-                val reply = nim.chat(
-                    listOf(
-                        NimClient.Msg(
-                            "system",
-                            "You are ${agent.name}, the ${agent.role} at ${store.snapshot().settings.businessName}. " +
-                                "Answer briefly and say what you will do next."
-                        ),
-                        NimClient.Msg("user", text)
-                    ),
-                    model = store.snapshot().settings.model
-                )
-                engine.say(agent, reply.content.ifBlank { "..." })
+                val reply = engine.converse(agent, text)
+                engine.say(agent, reply.ifBlank { "..." })
             }.onFailure { engine.say(agent, "I hit an error: ${it.message}", kind = MessageKind.SYSTEM) }
             _busy.value = false
         }
     }
 
-    /** Command bar: talk to the orchestrator. */
+    /** Command bar: talk to the company lead. */
     fun command(text: String) {
         val chief = store.snapshot().orchestrator ?: return
         messageAgent(chief.id, text)
@@ -230,31 +283,10 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- sales ----------
 
-    fun addProspect(company: String, email: String, value: String) {
-        if (company.isBlank()) return
-        val cents = value.toDoubleOrNull()?.times(100)?.toLong() ?: 0L
-        store.update { state ->
-            state.copy(
-                prospects = state.prospects + Prospect(
-                    company = company.trim(),
-                    email = email.trim(),
-                    valueCents = cents,
-                    ownerAgentId = state.orchestrator?.id.orEmpty()
-                )
-            )
-        }
-    }
-
     fun moveProspect(id: String, stage: ProspectStage) {
         store.update { state ->
             state.copy(prospects = state.prospects.map { if (it.id == id) it.copy(stage = stage) else it })
         }
-    }
-
-    fun addService(name: String, price: String) {
-        if (name.isBlank()) return
-        val cents = price.toDoubleOrNull()?.times(100)?.toLong() ?: 0L
-        store.update { state -> state.copy(services = state.services + Service(name = name.trim(), priceCents = cents)) }
     }
 
     /**
@@ -284,50 +316,6 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
                     "Payment link created for ${prospect.company}: $link",
                     source = "stripe"
                 )
-            }.onFailure { _notice.value = "Stripe: ${it.message}" }
-            _busy.value = false
-        }
-    }
-
-    // ---------- products ----------
-
-    fun addProduct(name: String, description: String, price: String, kind: DeliverableKind) {
-        if (name.isBlank()) return
-        val cents = price.toDoubleOrNull()?.times(100)?.toLong() ?: 0L
-        store.update { state ->
-            state.copy(
-                products = state.products + Product(
-                    name = name.trim(),
-                    description = description.trim(),
-                    priceCents = cents,
-                    kind = kind,
-                    createdBy = state.orchestrator?.id.orEmpty()
-                )
-            )
-        }
-    }
-
-    fun createCheckout(productId: String) {
-        val product = store.snapshot().products.firstOrNull { it.id == productId } ?: return
-        if (product.priceCents <= 0) {
-            _notice.value = "Set a price before creating a checkout."
-            return
-        }
-        _busy.value = true
-        viewModelScope.launch {
-            runCatching {
-                stripe.createPaymentLink(
-                    amountCents = product.priceCents,
-                    currency = store.snapshot().settings.currency,
-                    description = "${store.snapshot().settings.businessName} - ${product.name}"
-                )
-            }.onSuccess { link ->
-                _notice.value = link
-                store.update { state ->
-                    state.copy(products = state.products.map {
-                        if (it.id == product.id) it.copy(checkoutUrl = link, status = "on sale") else it
-                    })
-                }
             }.onFailure { _notice.value = "Stripe: ${it.message}" }
             _busy.value = false
         }

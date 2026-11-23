@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Icon
@@ -27,6 +28,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,8 +40,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hive.agents.browser.AgentBrowserActivity
+import com.hive.agents.browser.BrowserHub
 import com.hive.agents.data.Models
 import com.hive.agents.ui.screens.BrowsersScreen
 import com.hive.agents.ui.screens.ChatScreen
@@ -72,10 +78,21 @@ fun HiveApp(vm: HiveViewModel) {
     val keys by vm.keys.collectAsStateWithLifecycle()
     val inbox by vm.inbox.collectAsStateWithLifecycle()
     val pendingBrowser by vm.pendingBrowser.collectAsStateWithLifecycle()
+    val currentBrowser by BrowserHub.currentAgent.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     var screen by remember { mutableStateOf(HiveScreen.HOME) }
     var openMission by remember { mutableStateOf<String?>(null) }
+
+    // The company starts working when the app opens, without waiting for a button.
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) vm.onAppForeground()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // The agent asked for its browser: hand the real window to the human.
     // SINGLE_TOP + CLEAR_TOP reuses the window that is already open for this bot (and brings it
@@ -114,6 +131,12 @@ fun HiveApp(vm: HiveViewModel) {
                     onClick = { screen = HiveScreen.CHAT },
                     icon = { Icon(Icons.Filled.Email, contentDescription = null) },
                     label = { Text("Chat", fontSize = 10.sp) }
+                )
+                NavigationBarItem(
+                    selected = screen == HiveScreen.BROWSERS || screen == HiveScreen.VIZ,
+                    onClick = { screen = HiveScreen.BROWSERS },
+                    icon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    label = { Text("Browsers", fontSize = 10.sp) }
                 )
                 NavigationBarItem(
                     selected = screen == HiveScreen.BUSINESS,
@@ -197,6 +220,7 @@ fun HiveApp(vm: HiveViewModel) {
                     HiveScreen.TEAM -> TeamScreen(
                         state = state,
                         onHire = { r, n, c -> vm.hire(r, n, c) },
+                        onDelete = { vm.deleteAgent(it) },
                         onDm = { from, to, text -> vm.directMessage(from, to, text) },
                         onOpenViz = { screen = HiveScreen.VIZ }
                     )
@@ -211,12 +235,8 @@ fun HiveApp(vm: HiveViewModel) {
 
                     HiveScreen.BUSINESS -> SalesScreen(
                         state = state,
-                        onAddProspect = { c, e, v -> vm.addProspect(c, e, v) },
                         onMove = { id, stage -> vm.moveProspect(id, stage) },
-                        onPay = { vm.createPaymentLink(it) },
-                        onAddService = { n, p -> vm.addService(n, p) },
-                        onAddProduct = { n, d, p -> vm.addProduct(n, d, p, com.hive.agents.data.DeliverableKind.OTHER) },
-                        onCheckout = { vm.createCheckout(it) }
+                        onPay = { vm.createPaymentLink(it) }
                     )
 
                     HiveScreen.STUDIO -> StudioScreen(
@@ -236,6 +256,7 @@ fun HiveApp(vm: HiveViewModel) {
 
                     HiveScreen.BROWSERS -> BrowsersScreen(
                         state = state,
+                        currentAgent = currentBrowser,
                         onOpen = { agentId -> vm.openBrowser(agentId) },
                         onBack = { screen = HiveScreen.HOME }
                     )
