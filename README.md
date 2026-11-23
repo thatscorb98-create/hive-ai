@@ -14,10 +14,10 @@ Android app — Kotlin + Jetpack Compose (Material 3), OkHttp, kotlinx.serializa
 
 | | |
 |---|---|
-| Version | 2.13.3, build 23 — tagged `v2.13.3+23` |
+| Version | 2.13.4, build 24 — tagged `v2.13.4+24` |
 | Package | `com.hive.agents` |
 | Source | Kotlin + Compose, right here |
-| Build | `gradle :app:assembleDebug` — verified from a clean clone with `--no-build-cache` |
+| Build | `gradle :app:assembleDebug` — verified from a clean `--no-build-cache` build |
 | Nature | **clean-room reconstruction** of the shipped 2.9.0 APK, plus features added since |
 
 This repo was rebuilt from the released APK: the shipped binary was analysed for its package, stack, services and screen map, and the implementation was written fresh against that map. The architecture matches (lead bot, tool registry, approvals, vault, per-agent browser windows), but names, structure and UI details are not byte-identical to whatever produced the APK.
@@ -53,13 +53,13 @@ Read **`AGENT_README.md`** first. It is the living handoff: what changed in this
 | Chat as work order | A human message gives the bot a real turn with tools, so "add a product" or "make a lead list" actually happens; assistant `tool_calls` are echoed back and results are `role: "tool"` messages, so the model can see what it already ran |
 | Lead generation | Sales bots build lead lists with `search_web` + `fetch_page`, add them with `add_leads`, contact them, and record closings with `record_sale`; search falls through DuckDuckGo challenges to Bing RSS |
 | Proofreading | Every outbound email, product description and COPY deliverable goes through `agent/Proofreader` first: keeps facts and prices, cuts AI filler, never invents a claim |
-| Approvals | Payment links always ask. Email approval is a Setup switch; when off, outreach still passes the proofreader before sending. Unanswered background approval is a refusal |
+| Approvals | Payment links always ask. Email approval is on by default (Setup switch); when off, outreach still passes the proofreader before sending. Unanswered background approval is a refusal |
 | Memory | Per-agent memory plus a mistake ledger recalled before similar work; shared business facts seeded on first launch |
-| Email | Per-agent inbox + sent viewer (AgentMail) |
+| Email | Shared company inbox + sent viewer (AgentMail); per-agent provisioning not built |
 | Browsers | A **Browsers tab** lists every bot; one live window per bot, edge-to-edge safe so the chrome and page fit the screen, with zoom, address bar and human takeover |
 | Autopilot | **On by default, starting on the first screen.** While the app is open the team loops through the sales funnel every 45 seconds; WorkManager adds a 15-minute shift in the background. A wholly failed shift backs off for five minutes and reports in Chat |
-| Progress | Measured by **sales made**: Home shows sales count and collected revenue, and the bots are told to judge themselves the same way |
-| Fulfilment | `record_sale` records payment, `deliver_work` saves the finished work and closes the job; paid, undelivered work is the loop's first priority |
+| Progress | Measured by **paid sales made**: Home shows paid sales count and collected revenue, and the bots are told to judge themselves the same way |
+| Fulfilment | `record_sale` (ask-first) records payment, `deliver_work` saves the finished work and closes the job but refuses unpaid jobs; paid, undelivered work is the loop's first priority |
 | Samples | The Showcase bot makes customer-facing samples with `create_sample`; they are proofread and shown in Home's RECENT WORK strip |
 | Products | Digital goods and AI-run services are made by the crew on demand; there is no manual Business tab or add form |
 | Deliverables | Finished work lives in state and appears in Home's RECENT WORK strip; mission timelines are still in state |
@@ -71,9 +71,8 @@ Read **`AGENT_README.md`** first. It is the living handoff: what changed in this
 - Android shares one cookie jar per app: each bot has its own browser window and history, but a login is visible to every bot. The Browsers screen says so before you sign in.
 - One browser window is live at a time. Opening another bot's window brings that bot forward; the previous bot's page is not kept mounted.
 - The proofreader removes AI tells and protects facts, but it is not a fact-checker. A bot can still write something wrong; keeping claims true remains the agent's job.
-- Nothing has been run on a device or emulator. The APK compiles from a clean clone; screens and tools are untested at runtime. No NVIDIA key was available, so the planning fallback, waves and handoff prompts are compiled, not exercised.
+- Nothing has been run on a device or emulator. The APK compiles clean with 26 passing unit tests; screens, workers, vault, browser and model calls are untested at runtime. No NVIDIA key was available, so the planning fallback, waves and handoff prompts are compiled, not exercised.
 - Search depends on Google Custom Search keys (optional), public DuckDuckGo and Bing pages. Add a paid search API if search becomes a production dependency.
-- Socials are not integrated. Reading or posting on Reddit, Instagram and similar needs per-service API credentials or OAuth; the per-bot browser can only read what the human signed into.
 - Release signing is blocked: the original keystore is not available, so a build cannot install over the 2.9.0 APK as an update. See `docs/source-recovery.md`.
 - WorkManager may delay the 15-minute shift under Doze, and its background shift still starts from the standing goal rather than the foreground funnel order.
 - The foreground loop spends API credits while the app process is alive. Turn Autopilot off to stop it; there is no daily cap yet.
