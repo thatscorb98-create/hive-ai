@@ -35,7 +35,7 @@ You are working on an Android app that autonomous agents use to run a real busin
 - `AGENT_README.md`, `CHANGELOG.md` and the README status table are updated in the same version.
 - Commit message: `feat|fix|chore(scope): summary`, body explains why.
 
-## This version's invariants (2.13.1)
+## This version's invariants (2.13.2)
 
 - `TeamEngine.runMission` dispatches tasks **in parallel** (`coroutineScope` + `async`). Do not turn it back into a sequential loop; the owner asked for simultaneous API work.
 - `ModelRouter` routes lead/product to Super, research/sales/marketing/showcase to Lightning, and the proofreader to DeepSeek. Keep a manual override and the Setup switch.
@@ -46,6 +46,9 @@ You are working on an Android app that autonomous agents use to run a real busin
 - `HiveApp` starts autopilot from `LaunchedEffect(Unit)` as well as the lifecycle `ON_RESUME` observer. Keep both: the first composition can happen after the activity is already RESUMED.
 - Chat is a company chat: left rail of bot blobs, Company plus per-bot threads, and visible `DM`/`HANDOFF` messages. Do not collapse it back into a single card feed.
 - `deliver_work` is the only path that closes a delivered job; `record_sale` means payment received.
+- **Tool calls stay real tool calls.** Echo the assistant's `tool_calls` and answer each one with `role: "tool"` plus its `tool_call_id`. Never replace the call with "Calling tools." or send the result as a user message; the model loses track of which call finished and repeats it.
+- **Reasoning models need room.** Keep the planner at 3,000 tokens and tool calls at 8,192 or more. An empty 200 response must retry at twice the budget, then on another live model; it must never become bot content.
+- **A search challenge is not "no results."** `search_web` tries DuckDuckGo, then Bing RSS, and returns titles, links and snippets. Keep the city/region hint for local lead research.
 
 ## Do not
 
