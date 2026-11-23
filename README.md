@@ -20,7 +20,7 @@ Android app — Kotlin + Jetpack Compose (Material 3), OkHttp, kotlinx.serializa
 | Build | `gradle :app:assembleDebug` — verified from a source-only copy |
 | Nature | **clean-room reconstruction** of the shipped 2.9.0 APK, plus features added since |
 
-This repo was rebuilt from the released APK the shipped binary was analysed for its package, stack, services and screen map, and the implementation was written fresh against that map. The architecture matches (lead bot, tool registry, approvals, vault, per-agent browser windows), but names, structure and UI details are not byte-identical to whatever produced the APK,.
+This repo was rebuilt from the released APK: the shipped binary was analysed for its package, stack, services and screen map, and the implementation was written fresh against that map. The architecture matches (lead bot, tool registry, approvals, vault, per-agent browser windows), but names, structure and UI details are not byte-identical to whatever produced the APK.
 
 ## Build it
 
