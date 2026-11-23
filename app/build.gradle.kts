@@ -13,8 +13,8 @@ android {
         applicationId = "com.hive.agents"
         minSdk = 28
         targetSdk = 35
-        versionCode = 22
-        versionName = "2.13.2"
+        versionCode = 23
+        versionName = "2.13.3"
     }
 
     buildTypes {
