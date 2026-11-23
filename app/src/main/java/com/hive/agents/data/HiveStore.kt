@@ -32,9 +32,30 @@ class HiveStore(context: Context) {
 
     @Synchronized
     fun update(block: (HiveState) -> HiveState) {
-        val next = block(_state.value)
+        val next = trim(block(_state.value))
         _state.value = next
         write(next)
+    }
+
+    /**
+     * A working shift writes about twenty messages, and the whole state is rewritten on every
+     * change. Without a cap the file grows until every write is slow, which makes a busy company
+     * feel broken. Old chat lines fall off; the pipeline, products and paid work never do.
+     */
+    private fun trim(state: HiveState): HiveState {
+        val messages = state.messages.takeLast(MAX_MESSAGES)
+        val tasks = state.tasks.takeLast(MAX_TASKS)
+        val memory = state.memory.takeLast(MAX_MEMORY)
+        val inbox = state.inbox.take(MAX_INBOX)
+        val changed = messages.size != state.messages.size ||
+            tasks.size != state.tasks.size ||
+            memory.size != state.memory.size ||
+            inbox.size != state.inbox.size
+        return if (changed) {
+            state.copy(messages = messages, tasks = tasks, memory = memory, inbox = inbox)
+        } else {
+            state
+        }
     }
 
     private fun load(): HiveState {
@@ -49,6 +70,13 @@ class HiveStore(context: Context) {
     private fun read(source: File): HiveState? = runCatching {
         if (source.exists()) json.decodeFromString<HiveState>(source.readText()) else null
     }.getOrNull()
+
+    private companion object {
+        const val MAX_MESSAGES = 600
+        const val MAX_TASKS = 400
+        const val MAX_MEMORY = 800
+        const val MAX_INBOX = 200
+    }
 
     private fun write(state: HiveState) {
         runCatching {

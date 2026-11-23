@@ -360,7 +360,13 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _busy.value = true
             runCatching {
-                val reply = engine.converse(agent, text)
+                // An order to the boss is a mission for the team, not a one-bot chat reply.
+                // Talking to a specialist still stays a direct conversation.
+                val reply = if (agent.primary && vault.load().hasNim) {
+                    engine.takeOrder(agent, text)
+                } else {
+                    engine.converse(agent, text)
+                }
                 engine.say(agent, reply.ifBlank { "..." })
             }.onFailure { engine.say(agent, "I hit an error: ${it.message}", kind = MessageKind.SYSTEM) }
             _busy.value = false
