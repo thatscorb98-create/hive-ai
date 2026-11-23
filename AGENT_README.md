@@ -1,10 +1,21 @@
 # Agent handoff — read this first
 
-**Last updated:** v2.13.2+22, 2026-11-23
-**Build:** debug APK 28,204,185 bytes, SHA-256 `6255f1ed5bdf1ef510304f323419afe15ec77e87926c90b01a3bbfa04b912f91`
+**Last updated:** v2.13.3+23, 2026-11-23
+**Build:** debug APK 28,236,953 bytes, SHA-256 `b458b76f8d62707301f9b2031bd1b3110039fc1cb2b97201b5062ab83fe0ce11` (clean-clone build, `--no-build-cache`)
 **Runtime status:** compiles cleanly; **nothing has been run on a device or emulator**. No screen or tool has been exercised.
 
 This file is the short version for whichever coding agent picks the project up next. `AGENTS.md` has the hard rules, `CHANGELOG.md` has history, `docs/product-spec.md` has behaviour that must not drift. Update this file on **every** version (see the last section).
+
+## What changed in 2.13.3
+
+- **The shift no longer collapses into one task for one bot.** `planTasks` used to return a single `fallbackTask` when the lead's JSON did not parse, and that task always went to the first non-lead bot (Scout). That is the bug behind "only Chief and Scout work." Planning now falls back to `rosterPlan`, which gives the stage-relevant specialists a concrete job, fills remaining slots from whoever has waited longest, and always includes the boss's coordination job. A usable model plan is topped up the same way via `mergePlan`, capped at `MAX_TASKS = 5` per shift.
+- **Unknown roles round-robin.** `parseTasks` matched only `role`, then dumped everything on the first specialist. It now matches role or bot name and otherwise picks the specialist with the oldest last task.
+- **The handoff is visible.** `announcePlan` posts a `Shift plan, N bots working` system message listing each assignee and task, and DMs each bot its job before work begins.
+- **Waves with real handoffs.** `executeMission` groups tasks by wave: 0 = boss plan, research, offer, sample; 1 = sales and product; 2 = proofreading. Tasks inside a wave still run in parallel; each wave receives the finished output of earlier waves through `completedWork()` inside its prompt.
+- **An order to the boss is a mission.** `HiveViewModel.messageAgent` now calls `TeamEngine.takeOrder` for the primary bot: it creates a mission from the message, plans and dispatches the team, and replies with the per-bot result list. Specialists still use `converse`.
+- **Optional Google search.** `search_web` tries the Google Custom Search JSON API when `googleSearchKey` and `googleSearchCx` are both in the vault, then DuckDuckGo, then Bing RSS. Settings has both fields. Google has no free scraping endpoint, so it cannot be the default.
+- **The state file is capped.** A busy shift writes about twenty messages and every change rewrites the whole JSON. `HiveStore.update` keeps the last 600 messages, 400 tasks, 800 memory entries and 200 inbox items; pipeline, products, deliverables and paid work are never trimmed.
+- Version 2.13.3 / code 23.
 
 ## What changed in 2.13.2
 
@@ -43,7 +54,7 @@ echo "sdk.dir=/path/to/android-sdk" > local.properties
 gradle clean :app:assembleDebug
 ```
 
-Expected: `BUILD SUCCESSFUL`, `app/build/outputs/apk/debug/app-debug.apk`, versionCode 22 / versionName 2.13.2. A source-only copy of this tree (no build outputs) produced the APK above. The build is debug-signed, so it cannot install over the old 2.9.0/2.10.0 builds; the original release keystore is still missing. This is a known blocker, not a regression.
+Expected: `BUILD SUCCESSFUL`, `app/build/outputs/apk/debug/app-debug.apk`, versionCode 23 / versionName 2.13.3. A source-only copy of this tree (no build outputs) produced the APK above. The build is debug-signed, so it cannot install over the old 2.9.0/2.10.0 builds; the original release keystore is still missing. This is a known blocker, not a regression.
 
 ## Architecture map
 
@@ -72,23 +83,25 @@ Expected: `BUILD SUCCESSFUL`, `app/build/outputs/apk/debug/app-debug.apk`, versi
 ## Behaviour that must not regress
 
 1. **Model ids are resolved against the live catalog.** Never remove the `/v1/models` check or hardcode a retired id. `deepseek-ai/deepseek-v4.1-flash` is gone; use `deepseek-ai/deepseek-v4-flash`. A failed model call must throw, never become bot content.
-2. **Parallel task dispatch stays parallel.** `TeamEngine.runMission` uses `coroutineScope` + `async(Dispatchers.IO)`. Do not turn it back into a sequential loop.
-3. **Paid, undelivered customers come first.** `record_sale` means payment received; `deliver_work` is the only path that closes a delivered job.
-4. **The bottom bar is exactly Home, Chat, Browsers, Email, Settings.** Business and Studio are not tabs. Products and services are made by the crew on demand; Home shows the work.
-5. **The company starts with one lead, but must never stay stuck at one bot.** The lead hires through `hire_agent`; `ensureCoreTeam()` is the local safety net when the model fails or refuses to hire.
-6. **Every outbound email, product description, sample and COPY deliverable passes `Proofreader`.** Never weaken it to make a build pass.
-7. **Payment links always require human approval.** Email approval is the owner's switch; the proofreader still runs when it is off.
-8. **Keys, EIN and state keep their `.bak` copies.** No secret ever goes into the repo or an APK.
-9. **The station/chat must show real state.** No invented bots, messages, tasks or sales. The UI is a projection of `HiveState`; `NimClient` errors are shown as errors.
-10. **Tool results stay real tool results.** Echo the assistant's `tool_calls` and answer each with `role: "tool"` plus its `tool_call_id`. Never replace a call with "Calling tools." or send the result as a user message; the model loses the connection and repeats the call.
-11. **Reasoning models need room for reasoning.** Keep the planner at 3,000 tokens and tool calls at 8,192 or more. An empty response must retry with a larger budget and then another live model, never become a bot reply.
-12. **Search must not treat a challenge page as empty results.** DuckDuckGo can answer 202 with no result markup; fall through to Bing RSS and return titles, links and snippets.
+2. **Parallel task dispatch stays parallel inside a wave.** `executeMission` runs each wave with `coroutineScope` + `async(Dispatchers.IO)`; waves run in order only so later bots can receive earlier output. Do not turn the inside of a wave into a sequential loop.
+3. **A shift never becomes one task for one bot.** Keep `rosterPlan`/`mergePlan` and `MAX_TASKS`. The boss's plan is a bonus, not the only source of work: if the model returns prose, empty content or a partial plan, the standing role plan fills in.
+4. **Paid, undelivered customers come first.** `record_sale` means payment received; `deliver_work` is the only path that closes a delivered job.
+5. **The bottom bar is exactly Home, Chat, Browsers, Email, Settings.** Business and Studio are not tabs. Products and services are made by the crew on demand; Home shows the work.
+6. **The company starts with one lead, but must never stay stuck at one bot.** The lead hires through `hire_agent`; `ensureCoreTeam()` is the local safety net when the model fails or refuses to hire.
+7. **Every outbound email, product description, sample and COPY deliverable passes `Proofreader`.** Never weaken it to make a build pass.
+8. **Payment links always require human approval.** Email approval is the owner's switch; the proofreader still runs when it is off.
+9. **Keys, EIN and state keep their `.bak` copies.** No secret ever goes into the repo or an APK.
+10. **The station/chat must show real state.** No invented bots, messages, tasks or sales. The UI is a projection of `HiveState`; `NimClient` errors are shown as errors.
+11. **Tool results stay real tool results.** Echo the assistant's `tool_calls` and answer each with `role: "tool"` plus its `tool_call_id`. Never replace a call with "Calling tools." or send the result as a user message; the model loses the connection and repeats the call.
+12. **Reasoning models need room for reasoning.** Keep the planner at 3,000 tokens and tool calls at 8,192 or more. An empty response must retry with a larger budget and then another live model, never become a bot reply.
+13. **Search must not treat a challenge page as empty results.** DuckDuckGo can answer 202 with no result markup; fall through to Bing RSS and return titles, links and snippets. Google Custom Search is tried first only when the owner saved a key and `cx`.
 
 ## Known gaps / next work
 
-- No runtime verification. The station, chat rail, code blocks, crew fallback, model fallback and continuous loop are compiled only.
-- No NVIDIA key was available while building 2.13.2: the empty-reasoning retry, real tool-call protocol and wrap-up call have not been sent to the live API.
-- Search now relies on public DuckDuckGo and Bing pages. Either can rate-limit or change its markup; a paid search API is the durable fix if lead research becomes critical.
+- No runtime verification. The planning fallback, waves, handoffs, `takeOrder` path, chat rail, station and continuous loop are compiled only.
+- No NVIDIA key was available while building 2.13.3: nothing has been sent to the live API.
+- Search now relies on Google Custom Search (optional keys), public DuckDuckGo and Bing pages. A paid search API is the durable fix if lead research becomes critical.
+- Socials are not integrated. Reading and posting on Reddit, Instagram and similar needs per-service API credentials or OAuth; the per-bot browser can only read what the human has signed into.
 - The continuous loop spends NVIDIA credits while the app process lives. There is no per-day cap yet.
 - Background WorkManager shifts still start from the standing goal; the foreground loop uses `nextCompanyMission()`. Unify them if the owner wants the exact funnel order in the background too.
 - Parallel tasks assigned to the same bot can interleave their messages; the lead should assign distinct roles.
