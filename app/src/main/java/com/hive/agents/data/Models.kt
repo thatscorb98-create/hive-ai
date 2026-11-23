@@ -3,6 +3,8 @@ package com.hive.agents.data
 import kotlinx.serialization.Serializable
 import java.util.UUID
 
+private const val MAX_USAGE_HOURS = 168
+
 @Serializable
 enum class MissionStatus { PLANNED, RUNNING, BLOCKED, DONE, FAILED }
 
@@ -302,10 +304,6 @@ data class HiveState(
             }
         }
         return copy(usage = next.sortedBy { it.hourStart }.takeLast(MAX_USAGE_HOURS))
-    }
-
-    private companion object {
-        const val MAX_USAGE_HOURS = 168
     }
 }
 
