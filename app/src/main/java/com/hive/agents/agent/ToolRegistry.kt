@@ -306,13 +306,13 @@ class ToolRegistry(
                 }
             }
 
-            "open_website" -> BrowserHub.open(args.optString("url"))
+            "open_website" -> BrowserHub.open(agent.id, args.optString("url"))
 
-            "read_page" -> BrowserHub.readPage()
+            "read_page" -> BrowserHub.readPage(agent.id)
 
-            "click_text" -> BrowserHub.click(args.optString("text"))
+            "click_text" -> BrowserHub.click(agent.id, args.optString("text"))
 
-            "type_into" -> BrowserHub.typeInto(args.optString("target"), args.optString("value"))
+            "type_into" -> BrowserHub.typeInto(agent.id, args.optString("target"), args.optString("value"))
 
             "create_product" -> {
                 val kind = when (args.optString("kind").lowercase()) {
@@ -397,6 +397,9 @@ class ToolRegistry(
         "create_payment_link" ->
             "Amount: $${args.optLong("amount_cents") / 100.0}\nFor: ${args.optString("description")}\n\n" +
                 "Stripe links are created only when a buyer is ready to pay."
+        "create_checkout" ->
+            "Product: ${args.optString("product")}\n\n" +
+                "A checkout link is created only when a buyer is ready to pay."
         else -> args.toString()
     }
 

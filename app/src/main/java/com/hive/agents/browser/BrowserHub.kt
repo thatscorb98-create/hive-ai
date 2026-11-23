@@ -22,6 +22,10 @@ data class BrowserOpenRequest(
  * Each bot has its own browser window, URL and history. The agent can navigate, read the page,
  * click by visible text and type into fields, while the human can take the same window and log
  * in or solve a challenge. Anything the agent does not have a tool for, the human can do here.
+ *
+ * Ownership is enforced here: a tool call carries the calling agent's id, and it only reaches
+ * the window when that agent is the one whose browser is open. No bot can act in another's
+ * session.
  */
 object BrowserHub {
 
@@ -55,9 +59,7 @@ object BrowserHub {
         lastUrl = url
     }
 
-    fun lastUrlFor(agentId: String): String = lastUrl
-
-    /** Called by an agent tool: asks the UI to open the browser for this bot. */
+    /** Called by the UI: asks the host screen to open this bot's browser. */
     fun requestOpen(agentId: String, agentName: String, url: String) {
         _pendingOpen.value = BrowserOpenRequest(agentId, agentName, url)
     }
@@ -66,21 +68,42 @@ object BrowserHub {
         _pendingOpen.value = null
     }
 
-    suspend fun open(url: String): String {
-        val view = webView ?: return "The browser for this bot is closed. Open Browsers and pick this bot first."
-        runOnUi(view) { it.loadUrl(url) }
-        lastUrl = url
-        return "Opened $url"
+    /**
+     * The window this agent is allowed to drive, or null when its browser is not the open one.
+     * Returning null for a mismatch is what stops bot A from typing into bot B's session.
+     */
+    private fun windowFor(agentId: String): WebView? =
+        webView?.takeIf { activeAgentId == agentId }
+
+    private fun closedMessage(agentId: String): String {
+        val openAgent = activeAgentId
+        return if (openAgent == null) {
+            "Your browser is not open. Open Browsers, choose this bot, then try again."
+        } else if (openAgent == agentId) {
+            "Your browser is not ready yet."
+        } else {
+            "You can only drive your own browser. Another bot's window is open; ask the human to open yours from Browsers."
+        }
     }
 
-    suspend fun readPage(): String {
-        val view = webView ?: return "The browser is closed, so there is no page to read."
+    suspend fun open(agentId: String, url: String): String {
+        val view = windowFor(agentId) ?: return closedMessage(agentId)
+        if (url.isBlank()) return "No URL given."
+        val target = if (url.startsWith("http://") || url.startsWith("https://")) url else "https://$url"
+        runOnUi(view) { it.loadUrl(target) }
+        lastUrl = target
+        return "Opened $target"
+    }
+
+    suspend fun readPage(agentId: String): String {
+        val view = windowFor(agentId) ?: return closedMessage(agentId)
         val text = evaluate(view, "document.body ? document.body.innerText.slice(0, 8000) : ''")
         return unquote(text).ifBlank { "The page is empty or still loading." }
     }
 
-    suspend fun click(text: String): String {
-        val view = webView ?: return "The browser is closed."
+    suspend fun click(agentId: String, text: String): String {
+        val view = windowFor(agentId) ?: return closedMessage(agentId)
+        if (text.isBlank()) return "No label given."
         val needle = JSONObject.quote(text)
 
         /*
@@ -109,8 +132,9 @@ object BrowserHub {
         return if (result == "clicked") "Clicked \"$text\"." else "No clickable element matched \"$text\"."
     }
 
-    suspend fun typeInto(target: String, value: String): String {
-        val view = webView ?: return "The browser is closed."
+    suspend fun typeInto(agentId: String, target: String, value: String): String {
+        val view = windowFor(agentId) ?: return closedMessage(agentId)
+        if (target.isBlank()) return "No field given."
         val needle = JSONObject.quote(target)
         val payload = JSONObject.quote(value)
 
@@ -137,18 +161,29 @@ object BrowserHub {
         return if (result == "typed") "Typed into \"$target\"." else "No field matched \"$target\"."
     }
 
-    suspend fun scrollDown(): String {
-        val view = webView ?: return "The browser is closed."
+    suspend fun scrollDown(agentId: String): String {
+        val view = windowFor(agentId) ?: return closedMessage(agentId)
         runOnUi(view) { it.scrollBy(0, it.height / 2) }
         return "Scrolled down."
     }
 
     private suspend fun evaluate(view: WebView, js: String): String =
         suspendCancellableCoroutine { cont ->
+            var answered = false
             view.post {
                 runCatching {
-                    view.evaluateJavascript(js) { raw -> cont.resume(raw.orEmpty()) }
-                }.onFailure { cont.resume("\"\"") }
+                    view.evaluateJavascript(js) { raw ->
+                        if (!answered) {
+                            answered = true
+                            cont.resume(raw.orEmpty())
+                        }
+                    }
+                }.onFailure {
+                    if (!answered) {
+                        answered = true
+                        cont.resume("\"\"")
+                    }
+                }
             }
         }
 

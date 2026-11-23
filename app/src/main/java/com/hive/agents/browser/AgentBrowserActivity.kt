@@ -12,10 +12,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
@@ -34,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.hive.agents.agent.HiveGraph
 import com.hive.agents.ui.theme.Amber
 import com.hive.agents.ui.theme.Good
 import com.hive.agents.ui.theme.HiveTheme
@@ -86,6 +85,7 @@ private fun BrowserScreen(
     var loading by remember { mutableStateOf(true) }
     var progress by remember { mutableStateOf(0) }
     var error by remember { mutableStateOf("") }
+    var handedBack by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val webView = remember {
@@ -127,7 +127,7 @@ private fun BrowserScreen(
             Column(Modifier.weight(1f)) {
                 Text("$agentName's browser", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Amber)
                 Text(
-                    "You are in control. Sign in or finish any step, then tell the bot to continue.",
+                    "You are in control. Sign in or finish any step, then hand it back so the bot can continue.",
                     fontSize = 10.sp,
                     color = TextDim
                 )
@@ -161,8 +161,19 @@ private fun BrowserScreen(
             TextButton(onClick = { if (webView.canGoBack()) webView.goBack() }) { Text("< Back", fontSize = 11.sp) }
             TextButton(onClick = { if (webView.canGoForward()) webView.goForward() }) { Text("Forward", fontSize = 11.sp) }
             TextButton(onClick = { webView.reload() }) { Text("Reload", fontSize = 11.sp) }
-            TextButton(onClick = { BrowserHub.requestOpen(agentId, agentName, urlBar) }) {
-                Text("Hand to bot", fontSize = 11.sp, color = Teal)
+            TextButton(onClick = {
+                val graph = HiveGraph.get(context.applicationContext)
+                val agent = graph.store.snapshot().agent(agentId)
+                if (agent != null) {
+                    graph.engine.say(
+                        agent,
+                        "I finished in the browser and handed it back to you. Continue from here.",
+                        fromUser = true
+                    )
+                }
+                handedBack = true
+            }) {
+                Text(if (handedBack) "Bot notified" else "Hand back to bot", fontSize = 11.sp, color = Teal)
             }
         }
 
