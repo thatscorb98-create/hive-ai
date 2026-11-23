@@ -33,6 +33,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -72,6 +74,7 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
     val selectedMission: StateFlow<String?> = _selectedMission.asStateFlow()
 
     private var loopJob: Job? = null
+    private val shiftMutex = Mutex()
 
     private companion object {
         const val LOOP_PAUSE_MS = 45_000L
@@ -92,6 +95,12 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
         val current = store.snapshot()
         if (!current.settings.autopilot) return
         if (!vault.load().hasNim) return
+
+        // The 2.12 build could finish a shift without hiring because its model call failed.
+        // On the next launch, give that company its core crew before the loop starts.
+        if (current.agents.size <= 1 && current.settings.lastShiftAt > 0) {
+            viewModelScope.launch { engine.ensureCoreTeam() }
+        }
         startLoop()
     }
 
@@ -167,15 +176,18 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Human-triggered shift. Same code path the worker and the loop use. */
     fun runShift() {
+        if (!vault.load().hasNim) {
+            _notice.value = "Add your NVIDIA API key in Settings before running a shift."
+            return
+        }
         viewModelScope.launch { runShiftInternal() }
     }
 
-    /** Returns false when every task in the shift failed, so the loop backs off instead of burning credits. */
-    private suspend fun runShiftInternal(): Boolean {
-        if (_busy.value) {
-            delay(2_000)
-            return true
-        }
+    /**
+     * Shifts are serialized here. A manual tap while the loop is running now waits for the current
+     * shift instead of silently doing nothing, and a failed shift is never reported as healthy.
+     */
+    private suspend fun runShiftInternal(): Boolean = shiftMutex.withLock {
         engine.bootstrap()
         _busy.value = true
         try {
@@ -192,12 +204,16 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
             }
             engine.runMission(mission.id)
             val tasks = store.snapshot().tasks.filter { it.missionId == mission.id }
-            return tasks.isEmpty() || tasks.any { it.status == TaskStatus.DONE }
+            val healthy = tasks.isEmpty() || tasks.any { it.status == TaskStatus.DONE }
+            if (!healthy && tasks.isNotEmpty()) {
+                _notice.value = "Shift finished with failures. Open Chat to read what each bot reported."
+            }
+            healthy
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
             _notice.value = error.message ?: "Shift failed"
-            return false
+            false
         } finally {
             _busy.value = false
         }

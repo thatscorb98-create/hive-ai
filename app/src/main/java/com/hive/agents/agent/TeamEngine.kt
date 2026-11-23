@@ -8,10 +8,12 @@ import com.hive.agents.data.Message
 import com.hive.agents.data.MessageKind
 import com.hive.agents.data.Mission
 import com.hive.agents.data.MissionStatus
+import com.hive.agents.data.Models
 import com.hive.agents.data.ProspectStage
 import com.hive.agents.data.Task
 import com.hive.agents.data.TaskStatus
 import com.hive.agents.net.NimClient
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -118,6 +120,11 @@ class TeamEngine(
         }
         val failed = results.any { !it }
 
+        // If the lead model failed, or simply never hired anyone, the company would stay a
+        // one-bot chat forever. Give the lead a deterministic onboarding pass once. It is local
+        // (no API calls), so a bad model can never leave the app with no crew again.
+        if (store.snapshot().agents.size <= 1) ensureCoreTeam()
+
         val summary = store.snapshot().tasks.filter { it.missionId == missionId }
             .joinToString("\n") { "- ${it.title}: ${it.status.name.lowercase()}" }
 
@@ -200,19 +207,27 @@ class TeamEngine(
         val lead = team.firstOrNull { it.primary }
         val model = lead?.let { ModelRouter.forAgent(it, store.snapshot().settings) }
             ?: store.snapshot().settings.model
-        val reply = nim.chat(listOf(NimClient.Msg("system", prompt)), model = model, maxTokens = 500)
+        val reply = try {
+            nim.chat(listOf(NimClient.Msg("system", prompt)), model = model, maxTokens = 500)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            return listOf(fallbackTask(mission, team))
+        }
         val parsed = parseTasks(reply.content, team).map { it.copy(missionId = mission.id) }
         if (parsed.isNotEmpty()) return parsed
 
-        val fallbackAgent = team.firstOrNull { !it.primary } ?: team.first()
-        return listOf(
-            Task(
-                id = UUID.randomUUID().toString(),
-                missionId = mission.id,
-                title = mission.title,
-                detail = mission.brief,
-                assigneeId = fallbackAgent?.id.orEmpty()
-            )
+        return listOf(fallbackTask(mission, team))
+    }
+
+    private fun fallbackTask(mission: Mission, team: List<Agent>): Task {
+        val fallbackAgent = team.firstOrNull { !it.primary } ?: team.firstOrNull()
+        return Task(
+            id = UUID.randomUUID().toString(),
+            missionId = mission.id,
+            title = mission.title,
+            detail = mission.brief,
+            assigneeId = fallbackAgent?.id.orEmpty()
         )
     }
 
@@ -223,13 +238,35 @@ class TeamEngine(
             ?: return false
 
         updateTask(task.id) { it.copy(assigneeId = agent.id, status = TaskStatus.RUNNING) }
-        say(agent, "On it: ${task.title}", mission.id, kind = MessageKind.SYSTEM)
+
+        // Put the assignment in the transcript as an actual bot-to-bot message. The human can
+        // open either bot and see the handoff instead of a flat activity log.
+        val lead = team.firstOrNull { it.primary }
+        val toLead = lead?.id?.takeIf { it != agent.id }.orEmpty()
+        if (toLead.isNotBlank()) {
+            say(
+                lead,
+                "Assigning \"${task.title}\" to ${agent.name}. ${task.detail.take(160)}",
+                mission.id,
+                toAgentId = agent.id,
+                kind = MessageKind.HANDOFF
+            )
+            say(agent, "On it: ${task.title}", mission.id, toAgentId = toLead, kind = MessageKind.HANDOFF)
+        } else {
+            say(agent, "On it: ${task.title}", mission.id, kind = MessageKind.SYSTEM)
+        }
 
         return runCatching { dispatch(agent, task, mission) }
             .fold(
                 onSuccess = { result ->
                     updateTask(task.id) { it.copy(status = TaskStatus.DONE, output = result) }
-                    say(agent, result, mission.id)
+                    say(
+                        agent,
+                        result,
+                        mission.id,
+                        toAgentId = toLead,
+                        kind = if (toLead.isNotBlank()) MessageKind.HANDOFF else MessageKind.CHAT
+                    )
                     true
                 },
                 onFailure = { error ->
@@ -241,7 +278,13 @@ class TeamEngine(
                         "Read the tool output before retrying, and never repeat a call that already failed the same way."
                     )
                     suggestions.fromFailure(agent, task.title, message)
-                    say(agent, "Blocked: $message", mission.id, kind = MessageKind.SYSTEM)
+                    say(
+                        agent,
+                        "Blocked: $message",
+                        mission.id,
+                        toAgentId = toLead,
+                        kind = if (toLead.isNotBlank()) MessageKind.HANDOFF else MessageKind.SYSTEM
+                    )
                     false
                 }
             )
@@ -330,6 +373,7 @@ class TeamEngine(
             }
             appendLine("You share a team chat with the other bots, and you can message any of them with message_teammate. When another bot has to continue your work, message them the handoff before you finish.")
             appendLine("Be concrete, use tools, never invent results. A payment link or an email that costs money still needs human approval if the human has asked for it.")
+            appendLine("If a model or network call fails, report the failure plainly. Never describe failed work as done.")
         }
     }
 
@@ -433,7 +477,45 @@ class TeamEngine(
                 it.copy(settings = it.settings.copy(autopilot = true, autopilotDefaulted = true))
             }
         }
+
+        // 2.12 saved the retired deepseek-v4.1 id. Move it to the live id before the loop starts.
+        val latest = store.snapshot()
+        val migratedSettings = latest.settings.copy(model = Models.migrate(latest.settings.model))
+        val migratedAgents = latest.agents.map {
+            if (it.model.isNotBlank()) it.copy(model = Models.migrate(it.model)) else it
+        }
+        if (migratedSettings.model != latest.settings.model || migratedAgents != latest.agents) {
+            store.update { it.copy(settings = migratedSettings, agents = migratedAgents) }
+        }
         seedBusinessFacts()
+    }
+
+    /**
+     * A local, no-API onboarding pass. The lead asked for a crew; if the model failed, or chose
+     * not to hire, the company still gets its core people and can start working next shift.
+     */
+    suspend fun ensureCoreTeam() {
+        val current = store.snapshot()
+        if (current.agents.size > 1) return
+        val lead = current.orchestrator ?: return
+
+        say(
+            lead,
+            "I'm onboarding the core crew: Scout (research), Closer (sales), Spark (marketing), " +
+                "Maker (product), Demo (showcase) and Proof (proofreading).",
+            kind = MessageKind.SYSTEM
+        )
+        val crew = listOf(
+            Triple("Research", "Scout", "Finds real local businesses, verifies names, sites and contact details, and records what the company can sell each one."),
+            Triple("Sales", "Closer", "Writes short, specific outreach, follows up, handles objections, and records payments with record_sale."),
+            Triple("Marketing", "Spark", "Builds offers, campaigns, landing copy and market research that make the company findable."),
+            Triple("Product", "Maker", "Turns a sold offer into the finished deliverable: sites, copy, designs, documents and code."),
+            Triple("Showcase", "Demo", "Makes customer-ready samples of every offer so buyers can see the quality before they pay."),
+            Triple("Proofreader", "Proof", "Removes AI tells, fixes unsupported claims, and polishes every outbound email, product description and sample.")
+        )
+        crew.forEach { (role, name, charter) ->
+            hire(role, name, charter, by = "orchestrator")
+        }
     }
 
     private fun newLead(): Agent = Agent(
