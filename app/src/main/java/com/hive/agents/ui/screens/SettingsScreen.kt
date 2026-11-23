@@ -141,11 +141,16 @@ fun SettingsScreen(
         }
 
         item {
-            SectionHeader("AUTOPILOT", "shifts start when you open the app, then every 15 minutes in the background")
+            SectionHeader("AUTOPILOT", "the team loops through the pipeline while the app is open, then every 15 minutes in the background")
             ToggleRow(
                 label = if (state.settings.autopilot) "Running shifts automatically" else "Off - only manual shifts",
                 checked = state.settings.autopilot,
                 onChange = onAutopilot
+            )
+            ToggleRow(
+                label = "Use a different model per role (lead and product strong, research and sales fast, proofreader cheap)",
+                checked = state.settings.routeModels,
+                onChange = { onSaveSettings(state.settings.copy(routeModels = it)) }
             )
             ToggleRow(
                 label = "Proofread every email and product description before it goes out",

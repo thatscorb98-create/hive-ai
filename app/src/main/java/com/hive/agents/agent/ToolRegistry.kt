@@ -15,6 +15,8 @@ import com.hive.agents.data.ProspectStage
 import com.hive.agents.net.AgentMailApi
 import com.hive.agents.net.Http
 import com.hive.agents.net.StripeApi
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.util.UUID
 
@@ -50,6 +52,9 @@ class ToolRegistry(
     private val stripe: StripeApi,
     private val proofreader: Proofreader
 ) {
+
+    /** Approval dialogs are one at a time; the API calls that follow still run in parallel. */
+    private val approvalLock = Mutex()
 
     val specs = listOf(
         ToolSpec(
@@ -181,7 +186,7 @@ class ToolRegistry(
             schemaJson = """
                 {"type":"object","properties":{
                   "name":{"type":"string","description":"Short bot name"},
-                  "role":{"type":"string","description":"e.g. Sales, Research, Marketing, Product, Proofreader"},
+                  "role":{"type":"string","description":"e.g. Sales, Research, Marketing, Product, Showcase, Proofreader"},
                   "charter":{"type":"string","description":"One sentence on what this bot owns"}
                 },"required":["role"]}
             """.trimIndent(),
@@ -200,7 +205,7 @@ class ToolRegistry(
         ),
         ToolSpec(
             name = "record_sale",
-            description = "Record a closed sale so company progress is measured by sales made.",
+            description = "Record payment from a customer and close the sale, so progress is measured by sales made.",
             schemaJson = """
                 {"type":"object","properties":{
                   "company":{"type":"string"},"email":{"type":"string"},
@@ -226,6 +231,28 @@ class ToolRegistry(
                 {"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}
             """.trimIndent(),
             risk = ToolRisk.AUTO
+        ),
+        ToolSpec(
+            name = "create_sample",
+            description = "Save a sample of the company's work that a buyer can see before paying: a sample audit, post set, landing page or document.",
+            schemaJson = """
+                {"type":"object","properties":{
+                  "title":{"type":"string"},"body":{"type":"string"},
+                  "kind":{"type":"string","enum":["copy","image","website","document"]}
+                },"required":["title","body"]}
+            """.trimIndent(),
+            risk = ToolRisk.AUTO
+        ),
+        ToolSpec(
+            name = "deliver_work",
+            description = "Save the finished work for a paying customer and mark the job delivered. Use after payment is received.",
+            schemaJson = """
+                {"type":"object","properties":{
+                  "company":{"type":"string"},"title":{"type":"string"},"body":{"type":"string"},
+                  "kind":{"type":"string","enum":["copy","image","website","document"]}
+                },"required":["company","title","body"]}
+            """.trimIndent(),
+            risk = ToolRisk.AUTO
         )
     )
 
@@ -239,16 +266,18 @@ class ToolRegistry(
         }
 
         if (needsApproval) {
-            val approved = approvals.request(
-                ApprovalRequest(
-                    agentId = agent.id,
-                    agentName = agent.name,
-                    tool = name,
-                    title = approvalTitle(name, args),
-                    detail = approvalDetail(name, args),
-                    irreversible = name == "create_payment_link"
+            val approved = approvalLock.withLock {
+                approvals.request(
+                    ApprovalRequest(
+                        agentId = agent.id,
+                        agentName = agent.name,
+                        tool = name,
+                        title = approvalTitle(name, args),
+                        detail = approvalDetail(name, args),
+                        irreversible = name == "create_payment_link"
+                    )
                 )
-            )
+            }
             if (!approved) return "DENIED: the human did not approve this action."
         }
 
@@ -526,6 +555,7 @@ class ToolRegistry(
                             notes = notes,
                             valueCents = cents,
                             ownerAgentId = agent.id,
+                            paid = true,
                             updatedAt = now
                         )
                     } else {
@@ -535,6 +565,7 @@ class ToolRegistry(
                                 valueCents = if (cents > 0) cents else it.valueCents,
                                 email = email.ifBlank { it.email },
                                 notes = notes.ifBlank { it.notes },
+                                paid = true,
                                 updatedAt = now
                             ) else it
                         }
@@ -554,7 +585,73 @@ class ToolRegistry(
                     "Sale: $company, $${"%.2f".format(cents / 100.0)}",
                     source = "sales"
                 )
-                "Recorded the sale for $company."
+                "Recorded payment from $company. Deliver the work and mark it delivered when it is done."
+            }
+
+            "create_sample" -> {
+                val title = args.optString("title").trim()
+                if (title.isBlank()) return "No sample title."
+                val raw = args.optString("body")
+                if (raw.isBlank()) return "No sample body."
+                val kind = deliverableKind(args.optString("kind"))
+                val body = if (store.snapshot().settings.proofreadOutbound) {
+                    proofreader.copy(raw, "customer sample")
+                } else {
+                    raw
+                }
+                store.update { state ->
+                    state.copy(
+                        deliverables = state.deliverables + Deliverable(
+                            kind = kind,
+                            title = title,
+                            body = body,
+                            agentId = agent.id,
+                            isSample = true
+                        )
+                    )
+                }
+                "Saved the sample \"$title\" so buyers can see it."
+            }
+
+            "deliver_work" -> {
+                val company = args.optString("company").trim()
+                if (company.isBlank()) return "No customer given."
+                val email = args.optString("email").trim()
+                val title = args.optString("title").trim().ifBlank { "Delivered work for $company" }
+                val raw = args.optString("body")
+                if (raw.isBlank()) return "No delivered work given."
+                val body = if (store.snapshot().settings.proofreadOutbound) {
+                    proofreader.copy(raw, "customer deliverable")
+                } else {
+                    raw
+                }
+                var matched = false
+                var wasPaid = false
+                store.update { state ->
+                    val known = state.prospects.firstOrNull {
+                        (email.isNotBlank() && it.email.equals(email, true)) ||
+                            it.company.equals(company, true)
+                    } ?: return@update state
+                    matched = true
+                    wasPaid = known.paid
+                    state.copy(
+                        prospects = state.prospects.map {
+                            if (it.id == known.id) it.copy(delivered = true, updatedAt = System.currentTimeMillis()) else it
+                        },
+                        deliverables = state.deliverables + Deliverable(
+                            kind = deliverableKind(args.optString("kind")),
+                            title = title,
+                            body = body,
+                            agentId = agent.id
+                        )
+                    )
+                }
+                if (!matched) return "No customer named $company in the pipeline."
+                if (wasPaid) {
+                    "Delivered $title to $company. The job is closed."
+                } else {
+                    "Delivered $title to $company. Payment is not recorded yet; record_sale when it lands."
+                }
             }
 
             "proofread" -> proofreader.copy(
@@ -566,6 +663,13 @@ class ToolRegistry(
 
             else -> "Unhandled tool: $name"
         }
+    }
+
+    private fun deliverableKind(raw: String): DeliverableKind = when (raw.lowercase()) {
+        "image" -> DeliverableKind.IMAGE
+        "website" -> DeliverableKind.WEBSITE
+        "document" -> DeliverableKind.DOCUMENT
+        else -> DeliverableKind.COPY
     }
 
     private suspend fun fetchPage(url: String): String {
