@@ -1,26 +1,25 @@
-# Getting the source into this repo
+# Provenance and the signing blocker
 
-This repo currently holds documentation only. The 2.9.0 APK is compiled Kotlin; there is no recoverable source inside it (no debug info, no VCS metadata).
+## Where this source came from
 
-## The three paths
+`app/` is a clean-room reconstruction, not the original project. The shipped `hive-2.9.0.apk` (versionCode 16) was analysed statically — package, toolchain, permissions, components, third-party endpoints, model ids and the full `com.hive.agents.*` class map — and the implementation was written fresh against that map.
 
-1. **Reopen the original Freebuff chat.** Its workspace still holds the real Gradle project. Export or zip it, then commit it here. This is the only path that returns the actual code, including the signing keystore if it was generated there.
-2. **A repo or zip from you.** Fastest if the project lives anywhere else already.
-3. **Decompile and rebuild.** `jadx` gives Java-ish output and recovered resources; a fresh Gradle project is then assembled around it. Behaviour can be matched, but names, structure and Compose UI details will differ. Treat this as a rewrite, not a restore.
+What that gives you: a compiling project with the same architecture, the same screens, the same data model and the same integration points, that you can iterate on today.
 
-## Blocker: the signing key
+What it does not give you: the original code. The APK carries no debug symbols and no VCS metadata (`NO_SUPPORTED_VCS_FOUND`), so nothing beyond behaviour could be recovered from it.
 
-A build can only install as an update over 2.9.0 if it is signed with the **same private key** (`cert SHA-256 10af94b3…d8a428`). The fingerprint alone is not enough to sign anything.
+## Blocker: release signing
 
-Consequences:
+A build only installs as an update over the shipped 2.9.0 app if it is signed with the same private key (`cert SHA-256 10af94b3…d8a428`). A fingerprint cannot sign anything.
 
-- With the keystore: `adb install -r` keeps app data, so the stored API keys survive.
-- Without it: every new build needs a different signature, which forces an uninstall — and an uninstall wipes the vault. Keys would have to be re-entered, or restored from an export.
+- **With the keystore:** `adb install -r` keeps app data, so stored API keys survive an update.
+- **Without it:** every new build gets a different signature, Android forces an uninstall, and the uninstall wipes the vault.
 
-So the checklist item "keys survive updates" is really "recover the keystore". Until then, plan a vault export/import path as the fallback.
+Until the keystore is recovered, development builds are debug-signed and must be installed as a separate app (or after uninstalling, which loses the vault). The mitigation already in the code is that keys live in `hive-secrets.json` behind an Android Keystore key, so exporting and re-importing the vault is the recovery path — a vault export/import screen is still on the checklist.
 
-## Once the source lands
+## What to do once the keystore is found
 
-- Keep `applicationId com.hive.agents` and the existing signing config.
-- `git tag v2.9.0+16` at the first commit of the real source so the shipped build has a marker.
-- Put the keystore outside the repo (or in an ignored directory) and never commit its password.
+1. Put it outside version control (for example `~/.android/hive-release.jks`).
+2. Add a `signingConfigs.release` block that reads the path and passwords from environment variables or `local.properties`.
+3. Never commit the keystore or its password.
+4. Re-tag the first release-signed build so the update path is auditable.
