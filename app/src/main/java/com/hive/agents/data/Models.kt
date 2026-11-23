@@ -209,8 +209,10 @@ data class Settings(
     val fromName: String = "Local Reach Workshop",
     val model: String = Models.DEFAULT,
     val autoApproveLowRisk: Boolean = true,
-    /** Outreach runs on its own unless the human turns this on. */
-    val requireApprovalForEmail: Boolean = false,
+    /** Email is gated by default; an injected page must not be able to send mail on its own. */
+    val requireApprovalForEmail: Boolean = true,
+    /** Comma, newline or semicolon separated addresses that must never be emailed. */
+    val emailBlocklist: String = "",
     val requireApprovalForPayment: Boolean = true,
     val currency: String = "usd",
     val goal: String = "Sell digital goods and AI-run services for Local Reach Workshop",
@@ -247,8 +249,10 @@ data class HiveState(
     fun agent(id: String): Agent? = agents.firstOrNull { it.id == id }
 
     /** Progress is measured by money actually made, not by how busy the bots look. */
-    val salesMade: Int get() = prospects.count { it.stage == ProspectStage.WON }
-    val revenueCents: Long get() = prospects.filter { it.stage == ProspectStage.WON }.sumOf { it.valueCents }
+    val salesMade: Int get() = prospects.count { it.stage == ProspectStage.WON && it.paid }
+    val revenueCents: Long get() = prospects
+        .filter { it.stage == ProspectStage.WON && it.paid }
+        .sumOf { it.valueCents }
 }
 
 /**
