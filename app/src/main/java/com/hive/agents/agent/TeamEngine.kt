@@ -41,6 +41,11 @@ class TeamEngine(
 
     private val crewMutex = Mutex()
 
+    /** One shift is capped so a free model tier is not hammered by seven agents at once. */
+    private companion object {
+        const val MAX_TASKS = 5
+    }
+
     suspend fun hire(
         role: String,
         name: String,
@@ -110,41 +115,129 @@ class TeamEngine(
     }
 
     suspend fun runMission(missionId: String) {
-        val start = store.snapshot()
-        val mission = start.missions.firstOrNull { it.id == missionId } ?: return
+        val mission = store.snapshot().missions.firstOrNull { it.id == missionId } ?: return
+        say(store.snapshot().orchestrator, "Starting \"${mission.title}\".", missionId, kind = MessageKind.SYSTEM)
+        val healthy = executeMission(mission)
+        finishMission(mission, healthy)
+    }
 
+    /**
+     * The owner typing to the boss is a work order, not a chat reply. Turn it into a mission,
+     * give every bot its part, and answer with what the team actually did. This is the path that
+     * used to stop after the boss's first tool call.
+     */
+    suspend fun takeOrder(agent: Agent, text: String): String {
+        val mission = Mission(title = orderTitle(text), brief = text.trim(), ownerAgentId = agent.id)
+        store.update { it.copy(missions = it.missions + mission) }
+        say(
+            agent,
+            "On it: \"${mission.title}\". Splitting this across the team now.",
+            mission.id,
+            kind = MessageKind.SYSTEM
+        )
+
+        val healthy = executeMission(mission)
+        val summary = finishMission(mission, healthy)
+        val tasks = store.snapshot().tasks.filter { it.missionId == mission.id }
+        val done = tasks.count { it.status == TaskStatus.DONE }
+        val blocked = tasks.count { it.status == TaskStatus.FAILED }
+
+        return buildString {
+            appendLine(
+                if (healthy) "Done. $done of ${tasks.size} bot job(s) finished."
+                else "Ran the shift: $done finished, $blocked blocked. The thread has each bot's report."
+            )
+            append(summary)
+        }
+    }
+
+    /**
+     * Plan, then run the work in waves: context first (plan, research, offer, sample), then
+     * selling and building, then proofreading. Bots inside a wave still run at the same time,
+     * and each wave receives the finished work of the wave before it, so the team hands off
+     * instead of every bot starting from nothing.
+     */
+    private suspend fun executeMission(mission: Mission): Boolean {
+        setMission(mission.id, MissionStatus.RUNNING, "")
         store.update { it.copy(settings = it.settings.copy(lastShiftAt = System.currentTimeMillis())) }
-        setMission(missionId, MissionStatus.RUNNING, "")
-        say(start.orchestrator, "Starting \"${mission.title}\".", missionId, kind = MessageKind.SYSTEM)
 
         val team = ensureTeam()
         val planned = planTasks(mission, team)
+        if (planned.isEmpty()) return false
         store.update { s -> s.copy(tasks = s.tasks + planned) }
+        announcePlan(mission, planned, team)
 
-        // Every task is dispatched at the same time, so research, outreach, product work and
-        // proofreading overlap instead of waiting in a queue. Each bot calls its own model.
-        val results = coroutineScope {
-            planned.map { task ->
-                async(Dispatchers.IO) { executeTask(task, mission, team) }
-            }.awaitAll()
-        }
-        val failed = results.any { !it }
+        var failed = false
+        planned
+            .groupBy { task -> waveFor(team.firstOrNull { it.id == task.assigneeId }) }
+            .toSortedMap()
+            .forEach { (_, wave) ->
+                val handoff = completedWork(mission.id)
+                val results = coroutineScope {
+                    wave.map { task ->
+                        async(Dispatchers.IO) { executeTask(task, mission, team, handoff) }
+                    }.awaitAll()
+                }
+                if (results.any { !it }) failed = true
+            }
 
         // If the lead model failed, or simply never hired anyone, the company would stay a
         // one-bot chat forever. Give the lead a deterministic onboarding pass once. It is local
         // (no API calls), so a bad model can never leave the app with no crew again.
         if (store.snapshot().agents.size <= 1) ensureCoreTeam()
+        return !failed
+    }
 
-        val summary = store.snapshot().tasks.filter { it.missionId == missionId }
-            .joinToString("\n") { "- ${it.title}: ${it.status.name.lowercase()}" }
+    /** The owner has to see the boss handing each bot a job, in the chat, before work starts. */
+    private fun announcePlan(mission: Mission, planned: List<Task>, team: List<Agent>) {
+        val lead = team.firstOrNull { it.primary } ?: return
+        val lines = planned.joinToString("\n") { task ->
+            val who = team.firstOrNull { it.id == task.assigneeId }?.name ?: "someone"
+            "- $who: ${task.title}"
+        }
+        say(lead, "Shift plan, ${planned.size} bots working:\n$lines", mission.id, kind = MessageKind.SYSTEM)
+        planned.forEach { task ->
+            val who = team.firstOrNull { it.id == task.assigneeId } ?: return@forEach
+            if (who.id != lead.id) {
+                dm(lead, who, "Your job this shift: ${task.title}. ${task.detail.take(220)}", mission.id)
+            }
+        }
+    }
 
-        setMission(missionId, if (failed) MissionStatus.BLOCKED else MissionStatus.DONE, summary)
+    /** Work already finished this shift, so the next wave builds on it instead of repeating it. */
+    private fun completedWork(missionId: String): List<String> =
+        store.snapshot().tasks
+            .filter { it.missionId == missionId && it.status == TaskStatus.DONE && it.output.isNotBlank() }
+            .takeLast(6)
+            .map { task ->
+                val who = store.snapshot().agent(task.assigneeId)?.name ?: "A teammate"
+                "- $who on \"${task.title}\": ${task.output.take(600)}"
+            }
+
+    private fun summaryOf(missionId: String): String = store.snapshot().tasks
+        .filter { it.missionId == missionId }
+        .joinToString("\n") { task ->
+            val who = store.snapshot().agent(task.assigneeId)?.name ?: "unassigned"
+            "- $who: ${task.title} - ${task.status.name.lowercase()}"
+        }
+
+    private fun finishMission(mission: Mission, healthy: Boolean): String {
+        val summary = summaryOf(mission.id)
+        setMission(mission.id, if (healthy) MissionStatus.DONE else MissionStatus.BLOCKED, summary)
         say(
             store.snapshot().orchestrator,
-            if (failed) "Mission paused for review.\n$summary" else "Mission complete.\n$summary",
-            missionId,
+            if (healthy) "Mission complete.\n$summary" else "Mission paused for review.\n$summary",
+            mission.id,
             kind = MessageKind.SYSTEM
         )
+        return summary
+    }
+
+    /** The first sentence of an order, short enough for a mission title. */
+    private fun orderTitle(text: String): String {
+        val clean = text.trim().replace(Regex("\\s+"), " ")
+        val first = clean.substringBefore('.').substringBefore('\n').ifBlank { clean }
+        return first.take(70).trim().ifBlank { "Owner request" }
     }
 
     fun say(
@@ -190,6 +283,11 @@ class TeamEngine(
         return store.snapshot().agents
     }
 
+    /**
+     * The lead plans. If the model answers with prose, an empty reply, or a plan that leaves
+     * people idle, the standing role plan fills in, so a shift never collapses into one task
+     * for one bot. That collapse is what made the company look like Chief and Scout only.
+     */
     private suspend fun planTasks(mission: Mission, team: List<Agent>): List<Task> {
         if (team.size <= 1) {
             return listOf(
@@ -210,8 +308,9 @@ class TeamEngine(
             Team:
             $roster
 
-            Break the mission into 2-4 concrete tasks that can run in parallel. Reply with a JSON array only, each item:
+            You are the boss. Give the work to the whole team, not to yourself alone. Reply with a JSON array only, each item:
             {"title":"short task","detail":"what done looks like","role":"role from the team"}
+            Every bot you leave out sits idle this shift, so list one item per bot that has real work.
         """.trimIndent()
 
         val lead = team.firstOrNull { it.primary }
@@ -231,30 +330,150 @@ class TeamEngine(
         } catch (error: Exception) {
             say(
                 lead,
-                "Planning error: ${error.message?.take(160) ?: "unknown error"}. Using one fallback task for this shift.",
+                "Planning call failed: ${error.message?.take(160) ?: "unknown error"}. " +
+                    "Using the standing team plan so every bot still gets a job.",
                 mission.id,
                 kind = MessageKind.SYSTEM
             )
-            return listOf(fallbackTask(mission, team))
+            return rosterPlan(mission, team)
         }
+
         val parsed = parseTasks(reply.content, team).map { it.copy(missionId = mission.id) }
-        if (parsed.isNotEmpty()) return parsed
-
-        return listOf(fallbackTask(mission, team))
+        if (parsed.isEmpty()) {
+            say(
+                lead,
+                "The model did not return a usable plan, so I'm assigning the standing team jobs instead.",
+                mission.id,
+                kind = MessageKind.SYSTEM
+            )
+            return rosterPlan(mission, team)
+        }
+        return mergePlan(parsed, mission, team)
     }
 
-    private fun fallbackTask(mission: Mission, team: List<Agent>): Task {
-        val fallbackAgent = team.firstOrNull { !it.primary } ?: team.firstOrNull()
-        return Task(
-            id = UUID.randomUUID().toString(),
-            missionId = mission.id,
-            title = mission.title,
-            detail = mission.brief,
-            assigneeId = fallbackAgent?.id.orEmpty()
-        )
+    /**
+     * A readable plan can still leave half the crew idle. Fill the gaps with the standing role
+     * brief for the bots the model forgot, capped so a free tier stays affordable.
+     */
+    private fun mergePlan(parsed: List<Task>, mission: Mission, team: List<Agent>): List<Task> {
+        val used = parsed.map { it.assigneeId }.toSet()
+        val spare = rosterPlan(mission, team).filter { it.assigneeId !in used }
+        return (parsed + spare).take(MAX_TASKS)
     }
 
-    private suspend fun executeTask(task: Task, mission: Mission, team: List<Agent>): Boolean {
+    /**
+     * The standing plan: the stage of the business decides who must work, and the bots who have
+     * waited longest fill the rest. The boss always gets a coordination job.
+     */
+    private fun rosterPlan(mission: Mission, team: List<Agent>): List<Task> {
+        val lead = team.firstOrNull { it.primary }
+        val specialists = team.filter { !it.primary }
+        val lastWorked = store.snapshot().tasks.associate { it.assigneeId to it.createdAt }
+        val picked = LinkedHashSet<Agent>()
+
+        focusRoles(mission).forEach { key ->
+            specialists.firstOrNull { matchesRole(it, key) }?.let { picked += it }
+        }
+        specialists.sortedBy { lastWorked[it.id] ?: 0L }.forEach {
+            if (picked.size < MAX_TASKS - 1) picked += it
+        }
+        lead?.let { picked += it }
+
+        return picked.take(MAX_TASKS).map { agent ->
+            Task(
+                id = UUID.randomUUID().toString(),
+                missionId = mission.id,
+                title = taskTitle(agent, mission),
+                detail = roleBrief(agent, mission),
+                assigneeId = agent.id
+            )
+        }
+    }
+
+    /** Which specialists this stage needs, most important first. */
+    private fun focusRoles(mission: Mission): List<String> {
+        val text = "${mission.title} ${mission.brief}".lowercase()
+        return when {
+            text.contains("paid") || text.contains("deliver") -> listOf("product", "sales", "showcase")
+            text.contains("sample") -> listOf("showcase", "product", "market")
+            text.contains("lead") || text.contains("research") || text.contains("contact") ->
+                listOf("research", "sales")
+            text.contains("sell") || text.contains("offer") || text.contains("product") ->
+                listOf("market", "product", "showcase")
+            text.contains("follow") || text.contains("close") -> listOf("sales", "research")
+            else -> listOf("research", "market", "sales")
+        }
+    }
+
+    private fun matchesRole(agent: Agent, key: String): Boolean =
+        agent.role.lowercase().contains(key) || agent.name.lowercase().contains(key)
+
+    private fun taskTitle(agent: Agent, mission: Mission): String {
+        val role = agent.role.lowercase()
+        return when {
+            agent.primary -> "Plan the shift and brief the team"
+            role.contains("research") -> "Find and verify real leads"
+            role.contains("sales") -> "Pitch the leads that are ready"
+            role.contains("market") -> "Package the offer"
+            role.contains("product") -> "Build the deliverable"
+            role.contains("showcase") -> "Make a buyer-ready sample"
+            role.contains("proof") -> "Proofread what goes out"
+            else -> "${agent.role}: ${mission.title}"
+        }
+    }
+
+    /** A concrete, role-shaped job, so a bot never has to guess what it is supposed to do. */
+    private fun roleBrief(agent: Agent, mission: Mission): String {
+        val role = agent.role.lowercase()
+        val job = when {
+            agent.primary ->
+                "Run this shift as the boss. Check the pipeline, hire anyone missing with hire_agent, " +
+                    "message each teammate with their job using message_teammate, and decide what the " +
+                    "company sells next. Do not do the specialists' work yourself."
+            role.contains("research") ->
+                "Find 5-10 real local businesses that fit the offer. Use search_web and fetch_page, then " +
+                    "add the best ones with add_leads. Only record an email you actually saw on their site."
+            role.contains("sales") ->
+                "Work the leads that already have an email. Write one short, specific email per lead, " +
+                    "send it with send_email, and record anything closed with record_sale."
+            role.contains("market") ->
+                "Package one offer: what the buyer gets, what it costs, and the outcome. Save the copy " +
+                    "with save_deliverable and add the product with create_product if it is missing."
+            role.contains("product") ->
+                "Build the actual asset for the current offer or paid job and save it with save_deliverable. " +
+                    "If a customer has paid, finish their work and close it with deliver_work."
+            role.contains("showcase") ->
+                "Make one or two samples a buyer can judge before paying, with create_sample."
+            role.contains("proof") ->
+                "Proofread the last outbound email and product copy with proofread, then save the cleaned version."
+            else ->
+                "Do the part of \"${mission.title}\" that fits your role, then report exactly what you did."
+        }
+        return buildString {
+            appendLine("Mission: ${mission.title}")
+            if (mission.brief.isNotBlank()) appendLine("Owner's brief: ${mission.brief}")
+            appendLine(job)
+        }.trim()
+    }
+
+    /** 0 context (plan, research, offer, sample), 1 selling and building, 2 proofreading. */
+    private fun waveFor(agent: Agent?): Int {
+        val role = agent?.role?.lowercase().orEmpty()
+        return when {
+            agent == null -> 0
+            agent.primary -> 0
+            role.contains("proof") -> 2
+            role.contains("sales") || role.contains("product") -> 1
+            else -> 0
+        }
+    }
+
+    private suspend fun executeTask(
+        task: Task,
+        mission: Mission,
+        team: List<Agent>,
+        handoff: List<String>
+    ): Boolean {
         val agent = store.snapshot().agent(task.assigneeId)
             ?: team.firstOrNull { !it.primary }
             ?: team.firstOrNull()
@@ -279,7 +498,7 @@ class TeamEngine(
             say(agent, "On it: ${task.title}", mission.id, kind = MessageKind.SYSTEM)
         }
 
-        return runCatching { dispatch(agent, task, mission) }
+        return runCatching { dispatch(agent, task, mission, handoff) }
             .fold(
                 onSuccess = { result ->
                     updateTask(task.id) { it.copy(status = TaskStatus.DONE, output = result) }
@@ -313,7 +532,12 @@ class TeamEngine(
             )
     }
 
-    private suspend fun dispatch(agent: Agent, task: Task, mission: Mission): String {
+    private suspend fun dispatch(
+        agent: Agent,
+        task: Task,
+        mission: Mission,
+        handoff: List<String> = emptyList()
+    ): String {
         val building = store.snapshot().agents.size <= 1
         val model = ModelRouter.forAgent(agent, store.snapshot().settings)
         val messages = mutableListOf(
@@ -325,6 +549,11 @@ class TeamEngine(
                     appendLine("Brief: ${mission.brief}")
                     appendLine("Your task: ${task.title}")
                     if (task.detail.isNotBlank()) appendLine(task.detail)
+                    if (handoff.isNotEmpty()) {
+                        appendLine()
+                        appendLine("Your teammates already finished this in the same shift. Build on it, do not repeat it:")
+                        handoff.forEach { appendLine(it) }
+                    }
                     if (building) {
                         appendLine()
                         appendLine("You are the only bot right now. Before doing the work, hire the people this company needs with hire_agent: marketing, research, sales, product, a showcase bot and a proofreader. You can hire more than one person per function.")
@@ -448,14 +677,19 @@ class TeamEngine(
 
     private fun parseTasks(raw: String, team: List<Agent>): List<Task> {
         val json = extractJsonArray(raw) ?: return emptyList()
+        // An unknown role used to land on the first non-lead bot every time, which is how Scout
+        // ended up doing everyone's work. Spread it to whoever has waited longest instead.
+        val lastWorked = store.snapshot().tasks.associate { it.assigneeId to it.createdAt }
         return runCatching {
             val arr = JSONArray(json)
             (0 until arr.length()).mapNotNull { i ->
                 val item = arr.optJSONObject(i) ?: return@mapNotNull null
                 val role = item.optString("role")
-                val agent = team.firstOrNull { it.role.equals(role, ignoreCase = true) }
-                    ?: team.firstOrNull { !it.primary }
-                    ?: team.first()
+                val agent = team.firstOrNull {
+                    it.role.equals(role, ignoreCase = true) || it.name.equals(role, ignoreCase = true)
+                }
+                    ?: team.filter { !it.primary }.minByOrNull { lastWorked[it.id] ?: 0L }
+                    ?: team.firstOrNull()
                 Task(
                     id = UUID.randomUUID().toString(),
                     missionId = "",
