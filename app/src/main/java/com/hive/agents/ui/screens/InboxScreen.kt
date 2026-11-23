@@ -57,7 +57,7 @@ fun InboxScreen(
         item {
             Text("Email", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text(
-                "Every bot has its own address. Nothing is sent without approval.",
+                "Bots use the shared inbox unless you set an address. Email approval is on by default.",
                 fontSize = 11.sp,
                 color = TextDim
             )
