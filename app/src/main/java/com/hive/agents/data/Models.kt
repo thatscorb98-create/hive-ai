@@ -1,0 +1,233 @@
+package com.hive.agents.data
+
+import kotlinx.serialization.Serializable
+import java.util.UUID
+
+@Serializable
+enum class MissionStatus { PLANNED, RUNNING, BLOCKED, DONE, FAILED }
+
+@Serializable
+enum class TaskStatus { QUEUED, RUNNING, BLOCKED, DONE, FAILED }
+
+@Serializable
+enum class MessageKind { CHAT, DM, HANDOFF, SYSTEM, NOTE }
+
+@Serializable
+enum class MemoryKind { PREFERENCE, RULE, FACT, LESSON, WORKLOG }
+
+@Serializable
+enum class DeliverableKind { WEBSITE, IMAGE, COPY, DOCUMENT, CODE, OTHER }
+
+@Serializable
+enum class ProspectStage { NEW, QUALIFIED, PITCHED, NEGOTIATING, WON, LOST }
+
+/** A durable teammate. Hired by the orchestrator or by the human, and it keeps its memory. */
+@Serializable
+data class Agent(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val role: String,
+    val charter: String = "",
+    val email: String = "",
+    val colorSeed: Int = 0,
+    val hiredAt: Long = System.currentTimeMillis(),
+    val hiredBy: String = "orchestrator",
+    val active: Boolean = true,
+    /** Separate browser profile id, so each agent keeps its own cookies and session. */
+    val browserProfile: String = "",
+    val primary: Boolean = false
+) {
+    val profileId: String get() = browserProfile.ifBlank { id }
+}
+
+@Serializable
+data class Mission(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val brief: String = "",
+    val status: MissionStatus = MissionStatus.PLANNED,
+    val createdAt: Long = System.currentTimeMillis(),
+    val ownerAgentId: String = "",
+    val result: String = ""
+)
+
+@Serializable
+data class Task(
+    val id: String = UUID.randomUUID().toString(),
+    val missionId: String,
+    val title: String,
+    val detail: String = "",
+    val assigneeId: String = "",
+    val status: TaskStatus = TaskStatus.QUEUED,
+    val output: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Serializable
+data class Message(
+    val id: String = UUID.randomUUID().toString(),
+    val agentId: String,
+    val missionId: String = "",
+    val toAgentId: String = "",
+    val kind: MessageKind = MessageKind.CHAT,
+    val body: String,
+    val fromUser: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Serializable
+data class Deliverable(
+    val id: String = UUID.randomUUID().toString(),
+    val missionId: String = "",
+    val agentId: String = "",
+    val kind: DeliverableKind = DeliverableKind.OTHER,
+    val title: String,
+    val body: String = "",
+    val uri: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+/** One remembered fact, rule or mistake. [agentId] "*" means every agent can read it. */
+@Serializable
+data class MemoryEntry(
+    val id: String = UUID.randomUUID().toString(),
+    val agentId: String = "*",
+    val kind: MemoryKind = MemoryKind.FACT,
+    val text: String,
+    val context: String = "",
+    val source: String = "agent",
+    val createdAt: Long = System.currentTimeMillis(),
+    val lastUsedAt: Long = 0L,
+    val uses: Int = 0
+)
+
+@Serializable
+data class Automation(
+    val id: String = UUID.randomUUID().toString(),
+    val agentId: String = "",
+    val name: String,
+    val prompt: String,
+    val everyMinutes: Int = 1440,
+    val enabled: Boolean = true,
+    val lastRunAt: Long = 0L
+)
+
+@Serializable
+data class Prospect(
+    val id: String = UUID.randomUUID().toString(),
+    val company: String,
+    val contactName: String = "",
+    val email: String = "",
+    val stage: ProspectStage = ProspectStage.NEW,
+    val notes: String = "",
+    val valueCents: Long = 0L,
+    val ownerAgentId: String = "",
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+@Serializable
+data class Service(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val description: String = "",
+    val priceCents: Long = 0L,
+    val deliverableKind: DeliverableKind = DeliverableKind.OTHER,
+    val active: Boolean = true
+)
+
+@Serializable
+data class SentMail(
+    val id: String = UUID.randomUUID().toString(),
+    val agentId: String = "",
+    val from: String = "",
+    val to: String,
+    val subject: String,
+    val body: String,
+    val sentAt: Long = System.currentTimeMillis()
+)
+
+@Serializable
+data class InboxMail(
+    val id: String = UUID.randomUUID().toString(),
+    val agentId: String = "",
+    val from: String,
+    val subject: String,
+    val preview: String = "",
+    val body: String = "",
+    val receivedAt: Long = System.currentTimeMillis(),
+    val unread: Boolean = true
+)
+
+/** A prompt the agents recommend the human paste into a coding agent. */
+@Serializable
+data class Suggestion(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val problem: String,
+    val evidence: String = "",
+    val proposedChange: String = "",
+    val files: String = "",
+    val acceptance: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+    val copied: Boolean = false
+) {
+    fun asPrompt(): String = buildString {
+        appendLine("Problem: $problem")
+        if (evidence.isNotBlank()) appendLine("Evidence: $evidence")
+        if (proposedChange.isNotBlank()) appendLine("Proposed change: $proposedChange")
+        if (files.isNotBlank()) appendLine("Files likely involved: $files")
+        if (acceptance.isNotBlank()) appendLine("Acceptance: $acceptance")
+    }
+}
+
+@Serializable
+data class Settings(
+    val businessName: String = "Local Reach Workshop",
+    val businessEin: String = "",
+    val fromName: String = "Local Reach Workshop",
+    val model: String = Models.DEFAULT,
+    val autoApproveLowRisk: Boolean = true,
+    val requireApprovalForEmail: Boolean = true,
+    val requireApprovalForPayment: Boolean = true,
+    val currency: String = "usd"
+)
+
+@Serializable
+data class HiveState(
+    val agents: List<Agent> = emptyList(),
+    val missions: List<Mission> = emptyList(),
+    val tasks: List<Task> = emptyList(),
+    val messages: List<Message> = emptyList(),
+    val deliverables: List<Deliverable> = emptyList(),
+    val memory: List<MemoryEntry> = emptyList(),
+    val automations: List<Automation> = emptyList(),
+    val prospects: List<Prospect> = emptyList(),
+    val services: List<Service> = emptyList(),
+    val sentMail: List<SentMail> = emptyList(),
+    val inbox: List<InboxMail> = emptyList(),
+    val suggestions: List<Suggestion> = emptyList(),
+    val settings: Settings = Settings()
+) {
+    val orchestrator: Agent? get() = agents.firstOrNull { it.primary } ?: agents.firstOrNull()
+    fun agent(id: String): Agent? = agents.firstOrNull { it.id == id }
+}
+
+/** Model ids available on the free NVIDIA endpoint. */
+object Models {
+    const val LIGHTNING = "nvidia/nemotron-3.5-lightning-30b-a3b"
+    const val SUPER = "nvidia/nemotron-3-super-120b-a12b"
+    const val ULTRA = "nvidia/nemotron-3-ultra-550b-a55b"
+    const val DEEPSEEK = "deepseek-ai/deepseek-v4.1-flash"
+
+    const val DEFAULT = LIGHTNING
+
+    val all = listOf(LIGHTNING, SUPER, ULTRA, DEEPSEEK)
+
+    fun label(id: String): String = when (id) {
+        LIGHTNING -> "Nemotron 3.5 Lightning"
+        SUPER -> "Nemotron 3 Super"
+        ULTRA -> "Nemotron 3 Ultra"
+        DEEPSEEK -> "DeepSeek v4.1 Flash"
+        else -> id.substringAfterLast('/')
+    }
+}
