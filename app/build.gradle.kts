@@ -5,6 +5,10 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+// CI restores this keystore from repository secrets. Without it, Gradle falls back to the
+// throwaway debug key, which is fine for local builds but cannot update an installed APK.
+val hiveKeystore: String? = System.getenv("HIVE_KEYSTORE")
+
 android {
     namespace = "com.hive.agents"
     compileSdk = 35
@@ -13,13 +17,28 @@ android {
         applicationId = "com.hive.agents"
         minSdk = 28
         targetSdk = 35
-        versionCode = 26
-        versionName = "2.15.0"
+        versionCode = 27
+        versionName = "2.15.1"
+    }
+
+    signingConfigs {
+        if (!hiveKeystore.isNullOrBlank()) {
+            create("hive") {
+                storeFile = file(hiveKeystore!!)
+                storePassword = System.getenv("HIVE_STORE_PASSWORD")
+                keyAlias = System.getenv("HIVE_KEY_ALIAS")
+                keyPassword = System.getenv("HIVE_KEY_PASSWORD")
+                storeType = "PKCS12"
+            }
+        }
     }
 
     buildTypes {
         debug {
             isMinifyEnabled = false
+            if (!hiveKeystore.isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("hive")
+            }
         }
         release {
             isMinifyEnabled = false

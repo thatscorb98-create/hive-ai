@@ -6,7 +6,7 @@ on:
       version:
         description: Version name for the APK and release tag
         required: true
-        default: "2.15.0"
+        default: "2.15.1"
 
 permissions:
   contents: write
@@ -29,6 +29,17 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Restore signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.HIVE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "No signing key secret; this build will use a throwaway debug key."
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/hive-release.p12"
+          echo "HIVE_KEYSTORE=$RUNNER_TEMP/hive-release.p12" >> "$GITHUB_ENV"
+
       - name: Android SDK packages
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
@@ -41,7 +52,16 @@ jobs:
           gradle-version: "8.9"
 
       - name: Build debug APK
+        env:
+          HIVE_STORE_PASSWORD: ${{ secrets.HIVE_STORE_PASSWORD }}
+          HIVE_KEY_ALIAS: ${{ secrets.HIVE_KEY_ALIAS }}
+          HIVE_KEY_PASSWORD: ${{ secrets.HIVE_KEY_PASSWORD }}
         run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Verify signature
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | head -6
 
       - name: Stage APK
         run: |
@@ -54,7 +74,7 @@ jobs:
         with:
           tag_name: v${{ inputs.version }}
           target_commitish: main
-          name: Hive ${{ inputs.version }} - live dashboard sync
+          name: Hive ${{ inputs.version }}
           body: |
             Counts real model calls and token usage per hour, and can push snapshots to the Hive
             Station dashboard relay so it no longer waits on an exported file.
@@ -68,8 +88,9 @@ jobs:
             - Token counts come from the provider's `usage` object and stay 0 when it is absent.
             - Usage is kept as 168 hourly buckets (about seven days); capped on every write.
 
-            Debug-signed, so it may not install over an older build with a different signing
-            key (uninstall the old app first). Not tested on a device in CI.
+            Built with a stable CI signing key, so later Hive updates install over this one.
+            If you are coming from a build signed with an older key, Android requires one
+            uninstall first. Debuggable and not tested on a device in CI.
           files: |
             out/hive-${{ inputs.version }}-debug.apk
             out/hive-${{ inputs.version }}-debug.apk.sha256
