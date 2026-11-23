@@ -1,5 +1,38 @@
 # Changelog
 
+## v2.11.0+18 — 2026-11-23
+
+The company now starts with one lead bot who builds the team, and it runs itself.
+
+**Added**
+- One starting bot: `Chief`, the Founder. It knows it runs Local Reach Workshop, that the business sells digital goods and AI-run services, and that its job is to build a marketing team, a research team, a sales team, a product team and a proofreader.
+- `hire_agent` tool, so the lead or any bot can create the employees the work needs. Human hiring is still in Agents.
+- Delete a bot from Agents. Its memory and automations go with it; its past messages stay in the chat. Deleting the last bot starts a fresh lead so the company keeps running.
+- `agent/Proofreader`: every outbound email, product description and COPY deliverable is rewritten before it leaves the building. It keeps facts, prices and links, cuts AI filler, and never invents a claim.
+- `add_leads`, `record_sale`, `proofread` and `fetch_page` tools. Sales bots can build a list of real businesses, research them, add them in one call, contact them and record the closings.
+- Browsers is now a bottom-nav tab. It lists every bot, shows which window is live, and opens or brings forward any bot's browser.
+- Home and Business measure progress by **sales made** and money collected, not activity.
+- Setup now has the EIN, storage credentials, a proofreading switch and an email-approval switch, and says exactly when keys survive an update.
+- `hive-secrets.bak` and `hive-state.bak`: a second copy of the vault and the state, used if the main file is ever half-written.
+
+**Changed**
+- The Business tab is read-only. Products, leads and services are added by the bots; the human can still advance a lead or create a payment link when a buyer is ready.
+- Chat is a work order: `TeamEngine.converse` gives the bot its tools during the reply, so "add a product" or "make me a lead list" actually changes the state.
+- Autopilot is on by default. A shift starts when the app comes to the front and the 15-minute WorkManager schedule keeps running in the background.
+- `send_email` proofreads, marks the matching lead as pitched, and honours the email-approval switch. Payment links still always ask.
+- `create_product` descriptions and COPY deliverables pass the proofreader.
+- The browser window is edge-to-edge safe, with compact chrome, a scrollable control row and zoom, so it fits the visible screen instead of sliding under the system bars.
+- One-time upgrade migration: the old auto-hired trio collapses to the lead, autopilot turns on, and email approval turns off unless the owner changes it.
+
+**Verified**
+- `gradle clean :app:assembleDebug` succeeds from a source-only copy of this tree (no copied build outputs): debug APK **28,007,577 bytes**, SHA-256 `c360d6064e7e7ce41818122ea5ccb938d2f53d726f5a53201b2e7f93dee8d43f`.
+- Not verified on a device or emulator: **no screen has been run**. Hiring, proofreading, lead tools, autopilot and the browser layout are compiled, not exercised.
+
+**Known limits**
+- Android has one cookie jar per app, and one browser window is mounted at a time.
+- WorkManager may delay the 15-minute shift under Doze.
+- The proofreader removes AI tells and protects facts, but it cannot guarantee a claim is true.
+
 ## v2.10.0+17 — 2026-11-23
 
 Browsers, autopilot and products. Bots can now drive a real browser window, sell what they make, and keep working while the app is closed.

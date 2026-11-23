@@ -2,62 +2,74 @@
 
 ## What it is
 
-Hive AI is an Android app where a team of AI agents runs a service business. One orchestrator hires specialists, each specialist has its own browser, its own email address, its own memory, and they talk to each other in a shared chat while the human approves anything that costs money or leaves the building.
+Hive AI is an Android app where a team of AI agents runs a service business. The company starts with **one lead bot**. That lead knows it runs **Local Reach Workshop**, hires the marketing, research, sales, product and proofreading people it needs, and keeps the company moving while the human watches the chat and approves anything that needs a human.
 
 Business: **Local Reach Workshop** — a registered business with an EIN. Hive ships work under that name.
 
 ## Agents
 
-- **Orchestrator (primary)** — the human's single point of contact. Reads the mission, decides which roles are needed, hires them, chases status, reports back.
-- **Specialists** — created by the orchestrator or the human, each with a persistent role, tool set and memory. Roles are data (`RoleAssignment`), not code: hiring a new role must not require shipping an app update.
+- **Lead (primary)** — the human's single point of contact and the company's boss. It starts alone, decides what to sell and who to hire, and is expected to build the whole company: marketing, research, sales, product and a proofreader. It is judged on sales made.
+- **Specialists** — created by the lead (or any bot) with `hire_agent`, or by the human in Agents. Each has a persistent role, tool set and memory. Roles are data, not code: hiring a new role does not require an app update.
 - Hiring persists. A bot hired for a job survives restarts and keeps its memory.
-- Delete/hide semantics: hiding keeps history and routines; deleting erases memory.
+- **Deleting a bot** removes the bot, its memory and its automations. Its past messages stay in the chat as history. Deleting the last bot starts a fresh lead so the company keeps running.
+- One-time upgrade: the old auto-hired trio collapses to the lead, which then builds the team it actually needs.
 
 ## Per-agent capabilities
 
 | Capability | Behaviour |
 |---|---|
-| Browser | One browser profile per agent, own cookies/session, visible in the UI, human can take over the screen |
-| Email | One address per agent (AgentMail). Read inbox, send with approval, view sent folder |
+| Browser | One browser window per agent, its own URL and history, visible in the Browsers tab, human can take over the screen |
+| Email | One address per agent (AgentMail). Read inbox, send, view sent folder |
 | Memory | Preferences, standing rules, facts, dated work log, **mistake ledger** |
 | Tools | Registered in `ToolRegistry` with an approval class |
+| Hiring | `hire_agent` creates a teammate at any time |
 | Deliverables | Website, graphic, copy, document, digital good — attached to the mission |
+
+Android shares one cookie jar across WebViews, and one window is mounted at a time. Both limits are stated in the Browsers screen.
 
 ## Collaboration
 
 - One **team chat** where all agents post and the human can address a specific bot.
 - **Agent-to-agent DMs**: a directed channel so two bots can coordinate without spamming the human.
 - Handoff = a task moves from one bot to another with context attached.
-- **3D view**: a live graph of the team — nodes are bots, edges light up when they message or hand off, and the orchestrator sits at the centre. The point is to see who is blocked, who is working, who is idle.
+- A human message is a **work order**, not just a chat reply: the bot keeps its tools during the turn.
+- **3D view**: a live graph of the team — nodes are bots, edges light up when they message or hand off, and the lead sits at the centre.
 
 ## Memory and mistakes
 
 - Each memory row: `kind` (preference / rule / fact / lesson / worklog), text, source, created, last used.
 - **Mistake ledger**: when a task fails or the human corrects the bot, record `what happened → why → what to do instead`. Before retrying a similar task, retrieve the top matches and inject them.
-- Shared facts (business name, EIN, timezone, brand voice) are available to every agent.
+- Shared facts (business name, EIN, brand voice, the team-building mandate) are available to every agent.
 - Memory is editable in plain language: "what do you remember", "forget that", "that's out of date".
+- Deleting a bot deletes its private memory.
 
 ## Sales and money
 
 - Pipeline states: `new → qualified → pitched → negotiating → won/lost`.
-- Agents research and qualify leads, draft outreach, send with approval.
+- Sales bots research real businesses with `search_web` and `fetch_page`, add them in bulk with `add_leads`, contact them with `send_email`, and record closings with `record_sale`.
+- **Progress is measured by sales made** and money collected. Home and Business show those numbers first.
 - **Stripe links are created only when a buyer is ready to pay** — at the moment of the ask, for that specific job and amount. No pre-generated link inventory, no reuse across customers.
 - Every link creation shows an approval card with amount, currency, description and customer. Human approves; the link is then sent.
-- Invoices/contracts carry the Local Reach Workshop business identity.
+- The Business tab is read-only: bots add products and leads. The human can advance a lead or create a link for a ready buyer.
+- Invoices/contracts carry the Local Reach Workshop identity.
+
+## Proofreading
+
+- Every outbound email, every product description and every COPY deliverable passes `agent/Proofreader` before it leaves the building.
+- The proofreader keeps facts, prices, names and links exactly; cuts AI tells and filler; never invents a client, result, guarantee or deadline.
+- It is a style-and-safety gate, not a fact-checker. Agents remain responsible for the truth of a claim.
+- The lead is told to hire a proofreader bot as part of the team. The code gate applies even before that hire.
+
+## Autopilot
+
+- On by default. A shift starts when the app comes to the front, then every 15 minutes through WorkManager.
+- A shift picks up the oldest planned/running mission or starts one from the standing goal.
+- Autopilot never bypasses a payment approval. Email approval is the owner's switch; when off, the proofreader still runs.
+- Turning autopilot off stops the scheduled work; manual shifts remain available.
 
 ## Suggestion box
 
-Agents notice friction (a tool that keeps failing, a missing screen, a repeated manual step) and write a **ready-to-paste prompt** for a coding agent:
-
-```
-Problem: <what went wrong, with the failing step>
-Evidence: <log lines / message ids>
-Proposed change: <specific fix in this repo>
-Files likely involved: <paths>
-Acceptance: <how to verify>
-```
-
-The human copies it into whatever coding agent they use. This repo is the shared state so any agent can pick it up.
+Agents notice friction (a tool that keeps failing, a missing screen, a repeated manual step) and write a **ready-to-paste prompt** for a coding agent.
 
 ## Models
 
@@ -68,9 +80,10 @@ The human copies it into whatever coding agent they use. This repo is the shared
 
 ## Keys and updates
 
-- Keys are entered once and stored in the app vault (encrypted at rest).
+- Keys are entered once and stored in the app vault (encrypted at rest), with a backup copy.
+- Business identity, EIN and settings live in the app state file, also with a backup copy.
 - **Updating the app must not require re-entering keys.** That means every build is signed with the same release keystore, and the app data is preserved by an in-place install.
-- Vault export (encrypted) is required so a reinstall is not a total loss.
+- Uninstalling, or installing a build signed with a different key, clears app data. Vault export is still required so a reinstall is not a total loss.
 
 ## Open questions
 
@@ -79,4 +92,4 @@ The human copies it into whatever coding agent they use. This repo is the shared
 3. AgentMail account: how many inboxes/domains are available?
 4. Stripe: live or test, and does Local Reach Workshop have a verified account?
 5. Do agents email from one shared domain (`agent@localreachworkshop.com`) or per-agent subaddresses?
-6. Where does the 3D view get its state — local Room or a server?
+6. Where does the 3D view get its state — local store or a server?

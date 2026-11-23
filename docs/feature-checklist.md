@@ -2,7 +2,7 @@
 
 Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs at `docs.x.ai/grok-bot`.
 
-> **Status meaning (updated for v2.10.0):** ✅ = implemented in `app/` and builds,
+> **Status meaning (updated for v2.11.0):** ✅ = implemented in `app/` and builds,
 > 🟡 = partially implemented, ⬜ = not started. Earlier versions of this file described the
 > shipped APK; the statuses below describe the code in this repository.
 
@@ -13,11 +13,12 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 | 1.1 | Create a bot with name, avatar shape/colour | `Agent` + name/role/charter | ✅ |
 | 1.2 | Each bot has a durable job/role | `Agent.role` + `charter` | ✅ |
 | 1.3 | Primary bot reports on the whole team | `HiveState.orchestrator` | ✅ |
-| 1.4 | Orchestrator creates bots with a role, and they persist | `TeamEngine.ensureTeam` + `hire` | ✅ |
+| 1.4 | The primary bot creates bots with a role, and they persist | `hire_agent` tool + `TeamEngine.hire` | ✅ |
 | 1.5 | Pin, sections, hide/unhide | — | ⬜ |
 | 1.6 | Duplicate a bot without memory | — | ⬜ |
-| 1.7 | Delete a bot and its memory | manual forget only | 🟡 |
+| 1.7 | Delete a bot and its memory | Agents → Delete; memory and automations removed | ✅ |
 | 1.8 | Share/import bot templates | — | ⬜ |
+| 1.9 | Start with one lead, not a pre-made trio | `TeamEngine.bootstrap` + one-time migration | ✅ |
 
 ## 2. Memory
 
@@ -29,18 +30,20 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 | 2.4 | What do you remember / correct / forget | forget in Setup | 🟡 |
 | 2.5 | **Mistake ledger** with retrieval before retry | `MemoryService.lesson` + `guardrails` | ✅ |
 | 2.6 | Import memory from another assistant | — | ⬜ |
-| 2.7 | Survives chat reset, dies with the bot | stored separately from messages | ✅ |
+| 2.7 | Survives chat reset, dies with the bot | stored separately; delete removes it | ✅ |
 
 ## 3. Computer / browser
 
 | # | Grok Bot behaviour | Hive AI | Status |
 |---|---|---|---|
 | 3.1 | Persistent computer: browser + terminal + files | `AgentBrowserActivity` gives each bot a real WebView window | 🟡 |
-| 3.2 | Each bot its own screen, parallel work | one window per bot, opened from Browsers | ✅ |
+| 3.2 | Each bot its own screen, parallel work | one window per bot, listed in the Browsers tab | ✅ |
 | 3.3 | Sessions and logins persist | cookies persist app-wide; window history is per bot | 🟡 |
 | 3.4 | Hand over for SSO/passkey/CAPTCHA/2FA | the human takes the same window, then the bot continues | ✅ |
 | 3.5 | Read one-time codes from the bot's inbox | inbox exists, no agent wiring | 🟡 |
 | 3.6 | Local execution policy | tools are fixed and risk-classed | 🟡 |
+| 3.7 | Browsers tab to view any bot's window | bottom-nav Browsers, live indicator, bring-to-front | ✅ |
+| 3.8 | Window fits the phone screen | edge-to-edge safe insets, compact chrome, scrollable controls, zoom | 🟡 (compiled, not viewed) |
 
 ## 4. Connectors
 
@@ -50,19 +53,19 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 | 4.2 | Custom MCP servers | — | ⬜ |
 | 4.3 | Tokens server-side, never to the model | vault on device, tools never hand tokens to the model | ✅ |
 | 4.4 | Account-wide connectors | vault is account-wide | ✅ |
-| 4.5 | Search/read X | DuckDuckGo HTML only | 🟡 |
+| 4.5 | Search/read X | DuckDuckGo HTML + `fetch_page` | 🟡 |
 
 ## 5. Approvals
 
 | # | Grok Bot behaviour | Hive AI | Status |
 |---|---|---|---|
-| 5.1 | Every action reviewed | `ToolRegistry` risk classes | ✅ |
+| 5.1 | Every action reviewed | `ToolRegistry` risk classes + email switch | ✅ |
 | 5.2 | Card shows target, scope, values, warnings | `ApprovalDialog` + irreversible flag | ✅ |
 | 5.3 | Allow once / always / deny | allow once + deny | 🟡 |
-| 5.4 | Ask-first + allow rules | — | ⬜ |
+| 5.4 | Ask-first + allow rules | email approval switch in Setup | 🟡 |
 | 5.5 | Background approvals expire ~30 min | `ApprovalBroker` timeout = refusal | ✅ |
-| 5.6 | Built-in checks rules cannot override | fixed risk classes | 🟡 |
-| 5.7 | Action log | mission timeline | 🟡 |
+| 5.6 | Built-in checks rules cannot override | payment links always ask | 🟡 |
+| 5.7 | Action log | mission timeline + chat system messages | 🟡 |
 
 ## 6. Vault
 
@@ -83,6 +86,7 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 | 7.4 | Voice in / voice out | — | ⬜ |
 | 7.5 | Sync across devices | local only | ⬜ |
 | 7.6 | **3D team view** (Hive-specific) | `HiveVizScreen` animated graph | ✅ |
+| 7.7 | Tell a bot to add something and it does | `TeamEngine.converse` runs tools during the reply | ✅ |
 
 ## 8. Skills and routines
 
@@ -92,6 +96,7 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 | 8.2 | Prompt skills, tested before scheduling | missions act as one-shot runs | 🟡 |
 | 8.3 | Scheduled / event routines | `AutopilotWorker` every 15 min from the standing goal | ✅ |
 | 8.4 | Pause a routine | autopilot switch in Setup | ✅ |
+| 8.5 | Start working when the app opens | `HiveViewModel.onAppForeground` | ✅ |
 
 ## 9. Deliverables
 
@@ -100,6 +105,7 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 | 9.1 | Shared file workspace | deliverables and products in state | 🟡 |
 | 9.2 | Deliverables attached to chat | shown in mission + studio | ✅ |
 | 9.3 | Build sites, graphics, copy, digital goods | `create_product` + model-driven deliverables | 🟡 |
+| 9.4 | No AI slop leaves the building | `Proofreader` on email, products and COPY | ✅ |
 
 ## 10. Business operations
 
@@ -113,6 +119,10 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 | 10.6 | Suggestion box that outputs a coding-agent prompt | `SuggestionBox` + copy button | ✅ |
 | 10.7 | Products with a checkout per product | `create_product`, `create_checkout`, Business screen | ✅ |
 | 10.8 | Bots know who they work for | system prompt + seeded shared memory | ✅ |
+| 10.9 | Bots build lead lists and contact them | `add_leads`, `search_web`, `fetch_page`, `send_email` | ✅ |
+| 10.10 | Progress is read by sales made | `record_sale`, Home/Business sales count and revenue | ✅ |
+| 10.11 | Business tab is a view, not a form | products/leads added by bots; manual advance + payment link only | ✅ |
+| 10.12 | Lead bot knows it runs Local Reach Workshop and must build teams | lead prompt + shared facts | ✅ |
 
 ## 11. Platform and model
 
@@ -127,9 +137,10 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 
 | # | Requirement | Status |
 |---|---|---|
-| 12.1 | In-place update keeps keys | blocked: original keystore missing |
+| 12.1 | In-place update keeps keys | vault outside the APK + backup; blocked by missing original keystore |
 | 12.2 | No keys in the binary | ✅ |
-| 12.3 | Vault export/backup | ⬜ |
+| 12.3 | Vault backup copy | 🟡 (local `.bak` copy; no export/import yet) |
+| 12.4 | Business profile and EIN survive | state file + backup ✅ |
 
 ## Build order
 
