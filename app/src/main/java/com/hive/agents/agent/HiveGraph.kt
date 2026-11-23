@@ -34,7 +34,8 @@ object HiveGraph {
         val nim = NimClient(vault)
         val proofreader = Proofreader(nim, store)
         val suggestions = SuggestionBox(store)
+        val shifts = ShiftCoordinator()
         val tools = ToolRegistry(store, vault, memory, approvals, mail, stripe, proofreader)
-        val engine = TeamEngine(store, nim, tools, memory, suggestions)
+        val engine = TeamEngine(store, nim, tools, memory, suggestions, shifts)
     }
 }
