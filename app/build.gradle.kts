@@ -11,10 +11,10 @@ android {
 
     defaultConfig {
         applicationId = "com.hive.agents"
-        minSdk = 28
+        minIdk = 28
         targetSdk = 35
-        versionCode = 21
-        versionName = "2.13.1"
+        versionCode = 22
+        versionName = "2.13.2"
     }
 
     buildTypes {
