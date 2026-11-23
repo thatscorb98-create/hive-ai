@@ -33,8 +33,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -50,6 +48,7 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
     private val stripe = graph.stripe
     private val suggestions = graph.suggestions
     private val engine = graph.engine
+    private val shifts = graph.shifts
 
     val state: StateFlow<HiveState> = store.state
     val pendingApproval = approvals.pending
@@ -74,7 +73,6 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
     val selectedMission: StateFlow<String?> = _selectedMission.asStateFlow()
 
     private var loopJob: Job? = null
-    private val shiftMutex = Mutex()
 
     private companion object {
         const val LOOP_PAUSE_MS = 45_000L
@@ -83,7 +81,13 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         engine.bootstrap()
-        scheduleAutopilot()
+        if (store.snapshot().settings.autopilot) scheduleAutopilot()
+        viewModelScope.launch {
+            store.error.collect { message ->
+                if (message != null) _notice.value = message
+            }
+        }
+        vault.lastError?.let { _notice.value = it }
     }
 
     /**
@@ -124,13 +128,21 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- setup ----------
 
     fun saveKeys(newKeys: VaultKeys) {
-        vault.save(newKeys)
+        if (vault.lastError != null && newKeys.nimApiKey.isBlank()) {
+            _notice.value = "The vault could not be read on this device. Re-enter the NVIDIA key before saving, so the existing keys are not replaced with blanks."
+            return
+        }
+        val saved = runCatching { vault.save(newKeys) }
+        if (saved.isFailure) {
+            _notice.value = vault.lastError ?: "Keys were not saved: ${saved.exceptionOrNull()?.message}"
+            return
+        }
         val reloaded = vault.load()
         _keys.value = reloaded
         _notice.value = if (reloaded == newKeys) {
             "Keys saved to the encrypted vault, with a backup copy."
         } else {
-            "The vault could not be read back after saving. Try again before closing the app."
+            vault.lastError ?: "The vault could not be read back after saving. Try again before closing the app."
         }
         if (reloaded.hasNim && store.snapshot().settings.autopilot) startLoop()
     }
@@ -150,11 +162,20 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
             loopJob?.cancel()
             loopJob = null
             _loopOn.value = false
+            // Turning autopilot off must also stop the 15-minute worker, not just the in-app loop.
+            runCatching {
+                WorkManager.getInstance(getApplication()).cancelUniqueWork(AutopilotWorker.NAME)
+            }
         }
     }
 
     fun dismissNotice() {
         _notice.value = ""
+    }
+
+    /** Flush queued persistence work when the app leaves the foreground. */
+    fun flushState() {
+        viewModelScope.launch(Dispatchers.IO) { store.flush() }
     }
 
     private fun scheduleAutopilot() {
@@ -187,7 +208,7 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
      * Shifts are serialized here. A manual tap while the loop is running now waits for the current
      * shift instead of silently doing nothing, and a failed shift is never reported as healthy.
      */
-    private suspend fun runShiftInternal(): Boolean = shiftMutex.withLock {
+    private suspend fun runShiftInternal(): Boolean = shifts.run {
         engine.bootstrap()
         _busy.value = true
         try {
@@ -289,9 +310,15 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
         if (_busy.value) return
         _busy.value = true
         viewModelScope.launch {
-            runCatching { engine.runMission(id) }
-                .onFailure { _notice.value = it.message ?: "Mission failed" }
-            _busy.value = false
+            try {
+                shifts.run { engine.runMission(id) }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                _notice.value = error.message ?: "Mission failed"
+            } finally {
+                _busy.value = false
+            }
         }
     }
 
@@ -359,7 +386,7 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
         engine.say(agent, text, fromUser = true)
         viewModelScope.launch {
             _busy.value = true
-            runCatching {
+            try {
                 // An order to the boss is a mission for the team, not a one-bot chat reply.
                 // Talking to a specialist still stays a direct conversation.
                 val reply = if (agent.primary && vault.load().hasNim) {
@@ -368,8 +395,13 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
                     engine.converse(agent, text)
                 }
                 engine.say(agent, reply.ifBlank { "..." })
-            }.onFailure { engine.say(agent, "I hit an error: ${it.message}", kind = MessageKind.SYSTEM) }
-            _busy.value = false
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                engine.say(agent, "I hit an error: ${error.message}", kind = MessageKind.SYSTEM)
+            } finally {
+                _busy.value = false
+            }
         }
     }
 
@@ -413,7 +445,6 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
                 if (it.id == id) {
                     it.copy(
                         stage = stage,
-                        paid = it.paid || stage == ProspectStage.WON,
                         updatedAt = now
                     )
                 } else {
@@ -477,9 +508,11 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
         val agent = store.snapshot().agent(agentId) ?: return
         viewModelScope.launch {
             _busy.value = true
-            val messages = withContext(Dispatchers.IO) {
-                runCatching { mail.inbox(agent.email) }.getOrDefault(emptyList())
+            val result = withContext(Dispatchers.IO) {
+                runCatching { mail.inbox(agent.email) }
             }
+            result.exceptionOrNull()?.let { _notice.value = "Inbox: ${it.message}" }
+            val messages = result.getOrDefault(emptyList())
             _inbox.value = messages
             if (messages.isNotEmpty()) {
                 store.update { state ->
