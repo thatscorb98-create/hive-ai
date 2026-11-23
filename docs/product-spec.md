@@ -72,11 +72,11 @@ Android shares one cookie jar across WebViews, and one window is mounted at a ti
 
 ## Autopilot
 
-- On by default. While the app process is alive the company loops: run a shift, wait 45 seconds, run the next. WorkManager adds a 15-minute shift in the background.
+- On by default, from the first composed screen. `HiveApp` starts the loop in `LaunchedEffect(Unit)` and again on every `ON_RESUME`; the loop guard makes that idempotent. While the app process is alive the company loops: run a shift, wait 45 seconds, run the next. WorkManager adds a 15-minute shift in the background.
 - Each shift picks up an existing planned/running mission or creates the next funnel stage with `nextCompanyMission`.
 - A shift where every task fails waits five minutes before the next attempt.
-- Turning autopilot off cancels the foreground loop and the scheduled work; manual shifts remain available.
 - Autopilot never bypasses a payment approval. Email approval is the owner's switch; when off, the proofreader still runs.
+- Turning autopilot off cancels the foreground loop and the scheduled work; manual shifts remain available.
 
 ## Suggestion box
 

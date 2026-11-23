@@ -2,7 +2,7 @@
 
 Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs at `docs.x.ai/grok-bot`.
 
-> **Status meaning (updated for v2.13.0):** ✅ = implemented in `app/` and builds,
+> **Status meaning (updated for v2.13.1):** ✅ = implemented in `app/` and builds,
 > 🟡 = partially implemented, ⬜ = not started. Earlier versions of this file described the
 > shipped APK; the statuses below describe the code in this repository.
 
@@ -97,7 +97,7 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 | 8.2 | Prompt skills, tested before scheduling | missions act as one-shot runs | 🟡 |
 | 8.3 | Scheduled / event routines | `AutopilotWorker` every 15 min from the standing goal | ✅ |
 | 8.4 | Pause a routine | autopilot switch in Setup | ✅ |
-| 8.5 | Start working when the app opens | `HiveViewModel.onAppForeground` starts the continuous loop | ✅ |
+| 8.5 | Start working when the app opens | `HiveApp` calls `onAppForeground` from `LaunchedEffect(Unit)` and on `ON_RESUME`; the loop guard is idempotent | ✅ |
 
 ## 9. Deliverables
 
