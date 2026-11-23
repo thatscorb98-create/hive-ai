@@ -10,6 +10,9 @@ object ToolWeb {
     suspend fun fetchPage(url: String): String {
         if (url.isBlank()) return "No URL given."
         val target = if (url.startsWith("http://") || url.startsWith("https://")) url else "https://$url"
+        if (!isSafePublicUrl(target)) {
+            return "That address is private or is not a public http(s) URL, so it was not fetched."
+        }
         val raw = runCatching { Http.get(target) }.getOrElse { return "Fetch failed: ${it.message}" }
         val text = raw
             .replace(Regex("(?is)<(script|style)[^>]*>.*?</\\1>"), " ")
@@ -86,6 +89,25 @@ object ToolWeb {
             .toList()
 
         return if (bingHits.isEmpty()) "No results for \"$query\"." else bingHits.joinToString("\n")
+    }
+
+    /**
+     * Blocks localhost, LAN, link-local and other non-public destinations. This is not a full
+     * SSRF defence (DNS can change between this check and the request), but it stops an injected
+     * page from pointing the agent at the router, a phone-local service or cloud metadata.
+     */
+    internal fun isSafePublicUrl(url: String): Boolean {
+        val parsed = runCatching { java.net.URI(url) }.getOrNull() ?: return false
+        if (parsed.scheme?.lowercase() !in listOf("http", "https")) return false
+        val host = parsed.host?.removePrefix("[")?.removeSuffix("]")?.lowercase() ?: return false
+        if (host == "localhost" || host.endsWith(".local") || host.endsWith(".internal")) return false
+        val address = runCatching { java.net.InetAddress.getByName(host) }.getOrNull() ?: return false
+        return !(
+            address.isAnyLocalAddress ||
+                address.isLoopbackAddress ||
+                address.isLinkLocalAddress ||
+                address.isSiteLocalAddress
+            )
     }
 
     private suspend fun google(
