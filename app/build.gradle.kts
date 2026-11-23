@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "com.hive.agents"
-        minIdk = 28
+        minSdk = 28
         targetSdk = 35
         versionCode = 22
         versionName = "2.13.2"
