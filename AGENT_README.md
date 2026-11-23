@@ -1,7 +1,7 @@
 # Agent handoff — read this first
 
 **Last updated:** v2.12.0+19, 2026-11-23
-**Build:** debug APK 28,089,497 bytes, SHA-256 `049b3cda148264ed1585fee193704421e3a787238da19752f92ac95e4e469db6`
+**Build:** debug APK 28,089,497 bytes, SHA-256 `5f9b9bde70c2dd5279acb2f4b41444f20fc9d18716ccd7e8c5f31b4f192451e0`
 **Runtime status:** compiles cleanly; **nothing has been run on a device or emulator**. No screen or tool has been exercised.
 
 This file is the short version for whichever coding agent picks the project up next. `AGENTS.md` has the hard rules, `CHANGELOG.md` has history, `docs/product-spec.md` has behaviour that must not drift. Update this file on **every** version (see the last section).
@@ -25,7 +25,7 @@ echo "sdk.dir=/path/to/android-sdk" > local.properties
 gradle clean :app:assembleDebug
 ```
 
-Expected: `BUILD SUCCESSFUL` and `app/build/outputs/apk/debug/app-debug.apk`. The APK is debug-signed, so it cannot install over the old 2.9.0/2.10.0 builds; the original release keystore is still missing. This is a known blocker, not a regression.
+Expected: `BUILD SUCCESSFUL` and `app/build/outputs/apk/debug/app-debug.apk`. A fresh public clone at commit `34c34711` produced the APK above. The APK is debug-signed, so it cannot install over the old 2.9.0/2.10.0 builds; the original release keystore is still missing. This is a known blocker, not a regression.
 
 ## Architecture map
 

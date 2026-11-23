@@ -20,7 +20,7 @@ The company runs a continuous sales loop, the crew works in parallel on differen
 - Setup copy now describes the loop and the per-role model switch.
 
 **Verified**
-- `gradle clean :app:assembleDebug` succeeds: debug APK **28,089,497 bytes**, SHA-256 `049b3cda148264ed1585fee193704421e3a787238da19752f92ac95e4e469db6`.
+- `gradle clean :app:assembleDebug` succeeds from a fresh public clone at commit `34c34711`: debug APK **28,089,497 bytes**, SHA-256 `5f9b9bde70c2dd5279acb2f4b41444f20fc9d18716ccd7e8c5f31b4f192451e0`. The APK was downloaded again after upload and the hash matched.
 - Not verified on a device or emulator: **no screen has been run**. The deck, loop, parallel calls, samples and delivery are compiled, not exercised.
 
 **Known limits**
