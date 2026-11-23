@@ -24,7 +24,7 @@ This file is the short version for whichever coding agent picks the project up n
 - **Waves with real handoffs.** `executeMission` groups tasks by wave: 0 = boss plan, research, offer, sample; 1 = sales and product; 2 = proofreading. Tasks inside a wave still run in parallel; each wave receives the finished output of earlier waves through `completedWork()` inside its prompt.
 - **An order to the boss is a mission.** `HiveViewModel.messageAgent` now calls `TeamEngine.takeOrder` for the primary bot: it creates a mission from the message, plans and dispatches the team, and replies with the per-bot result list. Specialists still use `converse`.
 - **Optional Google search.** `search_web` tries the Google Custom Search JSON API when `googleSearchKey` and `googleSearchCx` are both in the vault, then DuckDuckGo, then Bing RSS. Settings has both fields. Google has no free scraping endpoint, so it cannot be the default.
-- **The state file is capped.** A busy shift writes about twenty messages and every change rewrites the whole JSON. `HiveStore.update` keeps the last 600 messages, 400 tasks, 800 memory entries and 200 inbox items. Pipeline, products, deliverables and paid work are never trimmed.
+- **The state file is capped.** A busy shift writes about twenty messages and every change rewrites the whole JSON. `HiveStore.update` keeps the last 600 messages, 400 tasks, 800 memory entries and 200 inbox items; pipeline, products, deliverables and paid work are never trimmed.
 - Version 2.13.3 / code 23.
 
 ## What changed in 2.13.2
@@ -53,7 +53,7 @@ This file is the short version for whichever coding agent picks the project up n
 - **Chat is a company chat, not a card feed.** `ui/screens/ChatScreen.kt` has a fixed left rail of bot blobs (plus Company), per-bot threads, iMessage-dark bubbles, timestamps, a working bar, and fenced-code blocks with Copy. Handoffs and DMs are real messages visible in both participants' threads.
 - **Work is visible as conversation.** `TeamEngine.executeTask` posts the lead's assignment as `HANDOFF`, the assignee's "on it" as `HANDOFF`, and the result back to the lead. `message_teammate` adds `DM`s. The overseer can peer into a working conversation instead of reading a flat log.
 - **Station view, not an orbit.** `ui/screens/HiveVizScreen.kt` is a StarNet-inspired cutaway: seven department rooms, isometric lids, hallways as handoff lanes, bots at workstations, glowing message packets, tap-to-isolate and a crew/work list. StarNet's idea is that the station is a projection of live runtime state; the art here is original Hive artwork, not a StarNet asset.
-- **Samples survive the Business-tab removal.** Home now has a RECENT WORK strip showing the latest deliverables and whether they are customer samples. Products/services are created on demand and measured on Home.
+- **Samples survive the Business-tab removal.** Home now has a RECENT WORK strip showing the latest deliverables and whether they are customer samples. Products/services are created by the crew on demand and measured on Home.
 - **Housekeeping.** `AgentAvatar.kt` is shared by Home and Chat; the old global header is gone; Settings has no back row; Inbox and Browsers no longer show a back link when they are tabs; the version is 2.13.0 / code 20.
 
 ## Build and verify
