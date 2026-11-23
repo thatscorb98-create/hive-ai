@@ -1,5 +1,19 @@
 # Changelog
 
+## v2.13.1+21 — 2026-11-23
+
+Starts the company on the first screen instead of waiting for a lifecycle event that may already have passed.
+
+**Fixed**
+- **Cold-launch autopilot**: Compose can first compose after the activity is RESUMED, so the `ON_RESUME` observer added in `DisposableEffect` never received an initial event. `HiveApp` now also calls `onAppForeground()` from `LaunchedEffect(Unit)`; the loop guard makes the resume path idempotent. The company starts working as soon as the app opens.
+- **Duplicate crew onboarding**: `TeamEngine.ensureCoreTeam()` is now guarded by a mutex and re-checks the roster under the lock, so the launch fallback and a failed shift cannot add the same six bots twice.
+
+**Verified**
+- `gradle clean :app:assembleDebug` succeeds: debug APK **28,187,801 bytes**, SHA-256 `a993587733c08881343812405903679e687f1b64057ab135874ad8be758b1c33`.
+- APK metadata: versionCode 21, versionName 2.13.1, minSdk 28, targetSdk 35.
+- Downloaded again from Catbox after upload: hash matched, zip structure clean.
+- Not verified on a device or emulator: **no screen has been run**. The autostart path is compiled, not exercised.
+
 ## v2.13.0+20 — 2026-11-23
 
 Fixes the retired-model failure that made shifts look complete while doing nothing, gives the company a real chat and a station view, and cuts the app to the five tabs the owner asked for.

@@ -14,7 +14,7 @@ Android app — Kotlin + Jetpack Compose (Material 3), OkHttp, kotlinx.serializa
 
 | | |
 |---|---|
-| Version | 2.13.0, build 20 — tagged `v2.13.0+20` |
+| Version | 2.13.1, build 21 — tagged `v2.13.1+21` |
 | Package | `com.hive.agents` |
 | Source | Kotlin + Compose, right here |
 | Build | `gradle :app:assembleDebug` — verified from a source-only copy |
@@ -55,7 +55,7 @@ Read **`AGENT_README.md`** first. It is the living handoff: what changed in this
 | Memory | Per-agent memory plus a mistake ledger recalled before similar work; shared business facts seeded on first launch |
 | Email | Per-agent inbox + sent viewer (AgentMail) |
 | Browsers | A **Browsers tab** lists every bot; one live window per bot, edge-to-edge safe so the chrome and page fit the screen, with zoom, address bar and human takeover |
-| Autopilot | **On by default.** While the app is open the team loops through the sales funnel every 45 seconds; WorkManager adds a 15-minute shift in the background. A wholly failed shift backs off for five minutes and reports in Chat |
+| Autopilot | **On by default, starting on the first screen.** While the app is open the team loops through the sales funnel every 45 seconds; WorkManager adds a 15-minute shift in the background. A wholly failed shift backs off for five minutes and reports in Chat |
 | Progress | Measured by **sales made**: Home shows sales count and collected revenue, and the bots are told to judge themselves the same way |
 | Fulfilment | `record_sale` records payment, `deliver_work` saves the finished work and closes the job; paid, undelivered work is the loop's first priority |
 | Samples | The Showcase bot makes customer-facing samples with `create_sample`; they are proofread and shown in Home's RECENT WORK strip |

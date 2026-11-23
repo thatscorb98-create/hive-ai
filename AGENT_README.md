@@ -1,10 +1,16 @@
 # Agent handoff — read this first
 
-**Last updated:** v2.13.0+20, 2026-11-23
-**Build:** debug APK 28,187,801 bytes, SHA-256 `ba4618f3210317194aa3f21d6156489d7ecf68076ff1180622f4db06b1f94ad6`
+**Last updated:** v2.13.1+21, 2026-11-23
+**Build:** debug APK 28,187,801 bytes, SHA-256 `a993587733c08881343812405903679e687f1b64057ab135874ad8be758b1c33`
 **Runtime status:** compiles cleanly; **nothing has been run on a device or emulator**. No screen or tool has been exercised.
 
 This file is the short version for whichever coding agent picks the project up next. `AGENTS.md` has the hard rules, `CHANGELOG.md` has history, `docs/product-spec.md` has behaviour that must not drift. Update this file on **every** version (see the last section).
+
+## What changed in 2.13.1
+
+- **Autopilot starts on the first screen.** `HiveApp` now calls `onAppForeground()` from a `LaunchedEffect(Unit)` as well as the lifecycle `ON_RESUME` observer. On a cold launch the activity can already be RESUMED when Compose first composes, so the observer alone never sees its initial event and the company would wait for a manual shift. The company now starts working as soon as the app opens.
+- **Crew onboarding is serialized.** `TeamEngine.ensureCoreTeam()` uses a mutex and re-checks the roster inside it, so the launch fallback and a failed shift cannot onboard the same six bots twice.
+- Version 2.13.1 / code 21. No other behaviour changed.
 
 ## What changed in 2.13.0
 
@@ -27,7 +33,7 @@ echo "sdk.dir=/path/to/android-sdk" > local.properties
 gradle clean :app:assembleDebug
 ```
 
-Expected: `BUILD SUCCESSFUL`, `app/build/outputs/apk/debug/app-debug.apk`, versionCode 20 / versionName 2.13.0. A source-only copy of this tree (no build outputs) produced the APK above. The build is debug-signed, so it cannot install over the old 2.9.0/2.10.0 builds; the original release keystore is still missing. This is a known blocker, not a regression.
+Expected: `BUILD SUCCESSFUL`, `app/build/outputs/apk/debug/app-debug.apk`, versionCode 21 / versionName 2.13.1. A source-only copy of this tree (no build outputs) produced the APK above. The build is debug-signed, so it cannot install over the old 2.9.0/2.10.0 builds; the original release keystore is still missing. This is a known blocker, not a regression.
 
 ## Architecture map
 
