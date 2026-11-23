@@ -21,17 +21,16 @@ data class BrowserOpenRequest(
  *
  * Each bot has its own browser window, URL and history. The agent can navigate, read the page,
  * click by visible text and type into fields, while the human can take the same window and log
- * in or solve a challenge. Anything the agent does not have a tool for, the human can do here.
+ * in or solve a challenge.
  *
- * Ownership is enforced here: a tool call carries the calling agent's id, and it only reaches
- * the window when that agent is the one whose browser is open. No bot can act in another's
- * session.
+ * The open window is re-attached every time its activity resumes, so returning to an existing
+ * window hands it back to the hub instead of leaving it pointed at a stopped view. Ownership is
+ * enforced here: a tool call carries the calling agent's id and only reaches that agent's window.
  */
 object BrowserHub {
 
     private var webView: WebView? = null
     private var activeAgentId: String? = null
-    private var lastUrl: String = ""
 
     private val _pendingOpen = MutableStateFlow<BrowserOpenRequest?>(null)
     val pendingOpen: StateFlow<BrowserOpenRequest?> = _pendingOpen.asStateFlow()
@@ -41,6 +40,7 @@ object BrowserHub {
 
     val isOpen: Boolean get() = webView != null
 
+    /** Attach a window to its bot. Called on first composition and again on every resume. */
     fun attach(agentId: String, view: WebView) {
         webView = view
         activeAgentId = agentId
@@ -55,9 +55,7 @@ object BrowserHub {
         }
     }
 
-    fun rememberUrl(url: String) {
-        lastUrl = url
-    }
+    fun ownsWindow(agentId: String): Boolean = webView != null && activeAgentId == agentId
 
     /** Called by the UI: asks the host screen to open this bot's browser. */
     fun requestOpen(agentId: String, agentName: String, url: String) {
@@ -68,41 +66,31 @@ object BrowserHub {
         _pendingOpen.value = null
     }
 
-    /**
-     * The window this agent is allowed to drive, or null when its browser is not the open one.
-     * Returning null for a mismatch is what stops bot A from typing into bot B's session.
-     */
     private fun windowFor(agentId: String): WebView? =
         webView?.takeIf { activeAgentId == agentId }
 
-    private fun closedMessage(agentId: String): String {
-        val openAgent = activeAgentId
-        return if (openAgent == null) {
-            "Your browser is not open. Open Browsers, choose this bot, then try again."
-        } else if (openAgent == agentId) {
-            "Your browser is not ready yet."
-        } else {
-            "You can only drive your own browser. Another bot's window is open; ask the human to open yours from Browsers."
-        }
+    private fun closedMessage(): String = if (activeAgentId == null) {
+        "Your browser is not open. Open Browsers, choose this bot, then try again."
+    } else {
+        "You can only drive your own browser. Another bot's window is open; ask the human to open yours from Browsers."
     }
 
     suspend fun open(agentId: String, url: String): String {
-        val view = windowFor(agentId) ?: return closedMessage(agentId)
+        val view = windowFor(agentId) ?: return closedMessage()
         if (url.isBlank()) return "No URL given."
         val target = if (url.startsWith("http://") || url.startsWith("https://")) url else "https://$url"
         runOnUi(view) { it.loadUrl(target) }
-        lastUrl = target
         return "Opened $target"
     }
 
     suspend fun readPage(agentId: String): String {
-        val view = windowFor(agentId) ?: return closedMessage(agentId)
+        val view = windowFor(agentId) ?: return closedMessage()
         val text = evaluate(view, "document.body ? document.body.innerText.slice(0, 8000) : ''")
         return unquote(text).ifBlank { "The page is empty or still loading." }
     }
 
     suspend fun click(agentId: String, text: String): String {
-        val view = windowFor(agentId) ?: return closedMessage(agentId)
+        val view = windowFor(agentId) ?: return closedMessage()
         if (text.isBlank()) return "No label given."
         val needle = JSONObject.quote(text)
 
@@ -133,7 +121,7 @@ object BrowserHub {
     }
 
     suspend fun typeInto(agentId: String, target: String, value: String): String {
-        val view = windowFor(agentId) ?: return closedMessage(agentId)
+        val view = windowFor(agentId) ?: return closedMessage()
         if (target.isBlank()) return "No field given."
         val needle = JSONObject.quote(target)
         val payload = JSONObject.quote(value)
@@ -159,12 +147,6 @@ object BrowserHub {
         """.trimIndent()
         val result = unquote(evaluate(view, js))
         return if (result == "typed") "Typed into \"$target\"." else "No field matched \"$target\"."
-    }
-
-    suspend fun scrollDown(agentId: String): String {
-        val view = windowFor(agentId) ?: return closedMessage(agentId)
-        runOnUi(view) { it.scrollBy(0, it.height / 2) }
-        return "Scrolled down."
     }
 
     private suspend fun evaluate(view: WebView, js: String): String =

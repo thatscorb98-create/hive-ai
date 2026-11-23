@@ -17,6 +17,7 @@
             android:name=".browser.AgentBrowserActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false"
+            android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize" />
 
         <activity

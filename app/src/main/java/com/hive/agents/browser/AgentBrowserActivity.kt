@@ -1,6 +1,7 @@
 package com.hive.agents.browser
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.os.Bundle
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -22,6 +23,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +35,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.hive.agents.agent.HiveGraph
 import com.hive.agents.ui.theme.Amber
 import com.hive.agents.ui.theme.Good
@@ -48,6 +54,9 @@ import com.hive.agents.ui.theme.TextDim
  */
 class AgentBrowserActivity : ComponentActivity() {
 
+    /** A URL pushed by a second open request while this window already exists. */
+    private val incomingUrl = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val agentId = intent.getStringExtra(EXTRA_AGENT_ID).orEmpty()
@@ -60,10 +69,18 @@ class AgentBrowserActivity : ComponentActivity() {
                     agentId = agentId,
                     agentName = agentName.ifBlank { "Bot" },
                     startUrl = url.ifBlank { "https://www.google.com" },
+                    incomingUrl = incomingUrl,
                     onClose = { finish() }
                 )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val url = intent.getStringExtra(EXTRA_URL).orEmpty()
+        if (url.isNotBlank()) incomingUrl.value = url
     }
 
     companion object {
@@ -79,6 +96,7 @@ private fun BrowserScreen(
     agentId: String,
     agentName: String,
     startUrl: String,
+    incomingUrl: MutableState<String?>,
     onClose: () -> Unit
 ) {
     var urlBar by remember { mutableStateOf(startUrl) }
@@ -101,7 +119,6 @@ private fun BrowserScreen(
                 override fun onPageFinished(view: WebView?, url: String?) {
                     loading = false
                     urlBar = url ?: urlBar
-                    if (url != null) BrowserHub.rememberUrl(url)
                 }
             }
             webChromeClient = object : WebChromeClient() {
@@ -114,9 +131,35 @@ private fun BrowserScreen(
         }
     }
 
-    DisposableEffect(webView) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    /*
+     * Attach on every resume, not just on first composition. Returning to a window that was
+     * already open otherwise leaves the hub holding a stopped view (or another bot's window),
+     * and the bot would drive the wrong page.
+     */
+    DisposableEffect(lifecycleOwner, webView) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> BrowserHub.attach(agentId, webView)
+                Lifecycle.Event.ON_DESTROY -> BrowserHub.detach(webView)
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
         BrowserHub.attach(agentId, webView)
-        onDispose { BrowserHub.detach(webView) }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            BrowserHub.detach(webView)
+        }
+    }
+
+    // A second open request for this window reuses it and loads the new address.
+    LaunchedEffect(incomingUrl.value) {
+        val next = incomingUrl.value ?: return@LaunchedEffect
+        incomingUrl.value = null
+        urlBar = next
+        webView.loadUrl(next)
     }
 
     Column(Modifier.fillMaxSize().background(Ink)) {
