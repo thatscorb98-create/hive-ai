@@ -78,7 +78,11 @@ fun HiveApp(vm: HiveViewModel) {
 
     var screen by remember { mutableStateOf(HiveScreen.HOME) }
 
-    // The company starts working when the app opens, without waiting for a button.
+    // The company starts working when the app opens, without waiting for a button. LaunchedEffect
+    // covers the first composition, when the activity may already be RESUMED and the observer
+    // below would never receive its initial ON_RESUME.
+    LaunchedEffect(Unit) { vm.onAppForeground() }
+
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) vm.onAppForeground()

@@ -18,6 +18,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import java.util.UUID
 
@@ -36,6 +38,8 @@ class TeamEngine(
     private val memory: MemoryService,
     private val suggestions: SuggestionBox
 ) {
+
+    private val crewMutex = Mutex()
 
     suspend fun hire(
         role: String,
@@ -495,8 +499,14 @@ class TeamEngine(
      * not to hire, the company still gets its core people and can start working next shift.
      */
     suspend fun ensureCoreTeam() {
+        crewMutex.withLock {
+            if (store.snapshot().agents.size > 1) return@withLock
+            ensureCoreTeamLocked()
+        }
+    }
+
+    private suspend fun ensureCoreTeamLocked() {
         val current = store.snapshot()
-        if (current.agents.size > 1) return
         val lead = current.orchestrator ?: return
 
         say(
