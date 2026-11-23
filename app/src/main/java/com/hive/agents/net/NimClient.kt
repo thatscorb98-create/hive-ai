@@ -2,6 +2,7 @@ package com.hive.agents.net
 
 import com.hive.agents.agent.ToolSpec
 import com.hive.agents.data.KeyVault
+import com.hive.agents.data.ModelUsage
 import com.hive.agents.data.Models
 import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
@@ -208,11 +209,28 @@ class NimClient(private val vault: KeyVault) {
         }
     }
 
-    private suspend fun post(body: JSONObject, key: String): String = Http.postJson(
-        "$BASE/chat/completions",
-        body.toString(),
-        mapOf("Authorization" to "Bearer $key")
-    )
+    private suspend fun post(body: JSONObject, key: String): String {
+        val raw = Http.postJson(
+            "$BASE/chat/completions",
+            body.toString(),
+            mapOf("Authorization" to "Bearer $key")
+        )
+        recordUsage(raw)
+        return raw
+    }
+
+    /**
+     * Real usage for the dashboard: one call per successful request. Retries are separate
+     * requests, so they are separate calls. Token counts come from the provider's `usage`
+     * object and are 0 when it does not report them.
+     */
+    private fun recordUsage(raw: String) {
+        val usage = runCatching { JSONObject(raw).optJSONObject("usage") }.getOrNull()
+        ModelUsage.record(
+            inputTokens = usage?.optInt("prompt_tokens", 0) ?: 0,
+            outputTokens = usage?.optInt("completion_tokens", 0) ?: 0
+        )
+    }
 
     private suspend fun resolveModel(requested: String, key: String): String {
         val wanted = Models.migrate(requested)
