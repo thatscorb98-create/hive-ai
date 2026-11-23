@@ -2,7 +2,9 @@
 
 Autonomous AI agents that run a service business end to end: they find leads, email them, do the work (websites, graphics, copy, digital goods) and close with a Stripe link only when a buyer is ready.
 
-The company starts with **one lead bot**. It knows it runs **Local Reach Workshop**, and it hires the marketing, research, sales, product and proofreading people it needs. The owner can hire or delete anyone, and can give the lead a work order in plain language from the chat.
+The company starts with **one lead bot**. It knows it runs **Local Reach Workshop**, and it hires the marketing, research, sales, product, showcase and proofreading people it needs. The owner can hire or delete anyone, and can give the lead a work order in plain language from the chat.
+
+While the app is open the company runs a continuous loop: research real local leads, work out what each one needs, make samples a buyer can see, reach out, follow up, close, take payment, then deliver the work. The crew works in parallel, with the lead and product bot on a strong model, research and sales on a fast model, and the proofreader on a cheap one.
 
 Android app — Kotlin + Jetpack Compose (Material 3), OkHttp, kotlinx.serialization. Models run on NVIDIA's hosted API.
 
@@ -10,7 +12,7 @@ Android app — Kotlin + Jetpack Compose (Material 3), OkHttp, kotlinx.serializa
 
 | | |
 |---|---|
-| Version | 2.11.0, build 18 — tagged `v2.11.0+18` |
+| Version | 2.12.0, build 19 — tagged `v2.12.0+19` |
 | Package | `com.hive.agents` |
 | Source | Kotlin + Compose, right here |
 | Build | `gradle :app:assembleDebug` — verified from a source-only copy |
@@ -29,14 +31,18 @@ gradle :app:assembleDebug
 
 Android Studio can open the project root directly and will create the Gradle wrapper on first sync. Nothing is vendored; the first build downloads from `google()` and `mavenCentral()`.
 
+## For coding agents
+
+Read **`AGENT_README.md`** first. It is the living handoff: what changed in this version, the build hash, the architecture map, invariants that must not regress, and the next known gaps. It is updated on every release, and so should you update it.
+
 ## What works in this version
 
 | Area | State |
 |---|---|
 | Starting team | One bot, `Chief`, knows it runs Local Reach Workshop and builds the rest of the company itself |
 | Hiring | `hire_agent` tool: the lead (or any bot) creates marketing, research, sales, product and proofreading bots; the human can hire or delete, and deletion removes that bot's memory |
-| Missions | Plan → task split → dispatch → timeline → deliverables |
-| Tool registry | `remember`, `hire_agent`, `add_leads`, `record_sale`, `proofread`, `fetch_page`, `send_email`, `create_payment_link`, `save_deliverable`, `search_web`, `add_prospect`, `message_teammate`, `open_website`, `read_page`, `click_text`, `type_into`, `create_product`, `create_checkout` |
+| Missions | Plan → task split → **parallel dispatch** → timeline → deliverables |
+| Tool registry | `remember`, `hire_agent`, `add_leads`, `record_sale`, `deliver_work`, `create_sample`, `proofread`, `fetch_page`, `send_email`, `create_payment_link`, `save_deliverable`, `search_web`, `add_prospect`, `message_teammate`, `open_website`, `read_page`, `click_text`, `type_into`, `create_product`, `create_checkout` |
 | Chat as work order | A human message gives the bot a real turn with tools, so "add a product" or "make a lead list" actually happens |
 | Lead generation | Sales bots build lead lists with `search_web` + `fetch_page`, add them with `add_leads`, contact them, and record closings with `record_sale` |
 | Proofreading | Every outbound email, product description and COPY deliverable goes through `agent/Proofreader` first: keeps facts and prices, cuts AI filler, never invents a claim |
@@ -44,12 +50,14 @@ Android Studio can open the project root directly and will create the Gradle wra
 | Memory | Per-agent memory plus a mistake ledger recalled before similar work; shared business facts seeded on first launch |
 | Email | Per-agent inbox + sent viewer (AgentMail) |
 | Browsers | A **Browsers tab** lists every bot; one live window per bot, edge-to-edge safe so the chrome and page fit the screen, with zoom, address bar and human takeover |
-| Autopilot | **On by default.** Runs a shift when the app opens, then every 15 minutes from the standing goal |
+| Autopilot | **On by default.** While the app is open the team loops through the sales funnel every 45 seconds; WorkManager adds a 15-minute shift in the background. A wholly failed shift backs off for five minutes |
 | Progress | Measured by **sales made**: Home and Business show sales count and collected revenue, and the bots are told to judge themselves the same way |
+| Fulfilment | `record_sale` records payment, `deliver_work` saves the finished work and closes the job; paid, undelivered work is the loop's first priority |
+| Samples | The Showcase bot makes customer-facing samples with `create_sample`; they are proofread and shown in Business |
 | Products | Digital goods and AI-run services with an on-demand Stripe checkout; the Business tab shows them without manual add forms |
 | Sales | Pipeline with advance and on-demand Stripe link, services list, owner per lead |
 | Studio | Deliverables and a suggestion box that writes coding-agent prompts |
-| Hive view | Animated 3D-style graph of the team and its messages |
+| Hive view | Pseudo-3D command deck: depth-scaled orbit, live message packets, work distribution per bot, and each bot's model. Tap a bot to trace its traffic |
 | Vault | Keys AES-GCM encrypted with Android Keystore, atomic `hive-secrets.json`, plus a backup copy; state has a backup too |
 
 ## Known gaps
@@ -60,6 +68,8 @@ Android Studio can open the project root directly and will create the Gradle wra
 - Nothing has been run on a device or emulator. The APK compiles from a clean source copy; screens and tools are untested at runtime.
 - Release signing is blocked: the original keystore is not available, so a build cannot install over the 2.9.0 APK as an update. See `docs/source-recovery.md`.
 - WorkManager may delay the 15-minute shift under Doze.
+- The foreground loop spends API credits while the app process is alive. Turn Autopilot off to stop it; there is no daily cap yet.
+- Tasks now run at the same time. If two are assigned to the same bot, their messages can interleave.
 
 ## Non-negotiables
 
@@ -72,8 +82,9 @@ Android Studio can open the project root directly and will create the Gradle wra
 
 ```
 AGENTS.md                      rules every coding agent must follow
+AGENT_README.md                living handoff; read first, update every version
 app/src/main/java/com/hive/agents/
-  agent/                       TeamEngine, ToolRegistry, Proofreader, Approvals,
+  agent/                       TeamEngine, ModelRouter, ToolRegistry, Proofreader, Approvals,
                                MemoryService, SuggestionBox, HiveGraph
   browser/                     BrowserHub, AgentBrowserActivity (one window per bot)
   data/                        models, atomic state store, encrypted KeyVault
@@ -93,4 +104,4 @@ CHANGELOG.md
 
 ## Versioning
 
-`vMAJOR.MINOR.PATCH+<versionCode>`. Every shipped version gets a commit, a tag, and a release note describing what changed and what to test.
+`vMAJOR.MINOR.PATCH+<versionCode>`. Every shipped version gets a commit, a tag, and a release note describing what changed and what to test — plus an updated `AGENT_README.md`.
