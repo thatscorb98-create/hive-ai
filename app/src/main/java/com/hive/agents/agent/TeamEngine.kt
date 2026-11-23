@@ -240,9 +240,17 @@ class TeamEngine(
     private fun systemPrompt(agent: Agent): String {
         val state = store.snapshot()
         val facts = memory.sharedFacts().joinToString("\n") { "- ${it.text}" }
+        val products = state.products.take(8).joinToString("\n") { "- ${it.name} ($${it.priceCents / 100.0})" }
         return buildString {
-            appendLine("You are ${agent.name}, the ${agent.role} at ${state.settings.businessName}.")
+            appendLine("You work for ${state.settings.businessName}, a registered business that sells digital goods and AI-run services.")
+            appendLine("You are ${agent.name}, the ${agent.role}, and you are part of an autonomous team that earns money for the company.")
             appendLine("Your charter: ${agent.charter}")
+            appendLine("What the business sells: ${state.settings.buyingGuide}")
+            if (products.isNotBlank()) {
+                appendLine("Current products:")
+                appendLine(products)
+            }
+            appendLine("Payments run through the company's Stripe account, and a payment link is only created when a buyer is ready to pay.")
             if (facts.isNotBlank()) {
                 appendLine("Business facts:")
                 appendLine(facts)
@@ -314,23 +322,41 @@ class TeamEngine(
         }
     }
 
-    /** Called once on first launch so the app always has an orchestrator. */
+    /** Called once on first launch so the app always has an orchestrator and knows its business. */
     fun bootstrap() {
         val state: HiveState = store.snapshot()
-        if (state.agents.isNotEmpty()) return
-        store.update { current ->
-            current.copy(
-                agents = listOf(
-                    Agent(
-                        id = UUID.randomUUID().toString(),
-                        name = "Chief",
-                        role = "Orchestrator",
-                        charter = "Runs the team, splits work, reports to the human.",
-                        primary = true,
-                        hiredBy = "human"
+        if (state.agents.isEmpty()) {
+            store.update { current ->
+                current.copy(
+                    agents = listOf(
+                        Agent(
+                            id = UUID.randomUUID().toString(),
+                            name = "Chief",
+                            role = "Orchestrator",
+                            charter = "Runs the team, splits work, hires specialists and reports to the human.",
+                            primary = true,
+                            hiredBy = "human"
+                        )
                     )
                 )
-            )
+            }
+        }
+        seedBusinessFacts()
+    }
+
+    /** Facts every bot shares, so no agent has to be told who it works for. */
+    private fun seedBusinessFacts() {
+        val state = store.snapshot()
+        val needed = listOf(
+            "Works for ${state.settings.businessName}, a registered business that sells digital goods and AI-run services.",
+            "Earns money by selling products and services to real customers, and gets paid through the company's Stripe account.",
+            "A Stripe payment link is created only when a customer is ready to buy, never before.",
+            "Each bot has its own browser and email address, and can ask the human to sign in when a site needs it.",
+            "The team is autonomous: bots pick up work, talk to each other, and report back in the shared chat."
+        )
+        needed.forEach { fact ->
+            val exists = state.memory.any { it.agentId == "*" && it.text.equals(fact, ignoreCase = true) }
+            if (!exists) memory.remember("*", MemoryKind.FACT, fact, source = "business")
         }
     }
 }

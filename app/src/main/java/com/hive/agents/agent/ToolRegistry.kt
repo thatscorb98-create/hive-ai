@@ -1,11 +1,15 @@
 package com.hive.agents.agent
 
+import com.hive.agents.browser.BrowserHub
 import com.hive.agents.data.Agent
 import com.hive.agents.data.Deliverable
 import com.hive.agents.data.DeliverableKind
 import com.hive.agents.data.HiveStore
 import com.hive.agents.data.KeyVault
 import com.hive.agents.data.MemoryKind
+import com.hive.agents.data.Message
+import com.hive.agents.data.MessageKind
+import com.hive.agents.data.Product
 import com.hive.agents.data.Prospect
 import com.hive.agents.net.AgentMailApi
 import com.hive.agents.net.Http
@@ -107,6 +111,67 @@ class ToolRegistry(
                 },"required":["company"]}
             """.trimIndent(),
             risk = ToolRisk.AUTO
+        ),
+        ToolSpec(
+            name = "message_teammate",
+            description = "Send a direct message to another bot on the team, to coordinate or hand off work.",
+            schemaJson = """
+                {"type":"object","properties":{
+                  "to":{"type":"string","description":"Bot name or role"},
+                  "message":{"type":"string"}
+                },"required":["to","message"]}
+            """.trimIndent(),
+            risk = ToolRisk.AUTO
+        ),
+        ToolSpec(
+            name = "open_website",
+            description = "Open a website in this bot's own browser.",
+            schemaJson = """
+                {"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}
+            """.trimIndent(),
+            risk = ToolRisk.AUTO
+        ),
+        ToolSpec(
+            name = "read_page",
+            description = "Read the visible text of the page in this bot's browser.",
+            schemaJson = """{"type":"object","properties":{}}""".trimIndent(),
+            risk = ToolRisk.AUTO
+        ),
+        ToolSpec(
+            name = "click_text",
+            description = "Click the link or button on the current page whose label contains this text.",
+            schemaJson = """
+                {"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}
+            """.trimIndent(),
+            risk = ToolRisk.AUTO
+        ),
+        ToolSpec(
+            name = "type_into",
+            description = "Type into the form field on the current page that matches this label or placeholder.",
+            schemaJson = """
+                {"type":"object","properties":{"target":{"type":"string"},"value":{"type":"string"}},"required":["target","value"]}
+            """.trimIndent(),
+            risk = ToolRisk.AUTO
+        ),
+        ToolSpec(
+            name = "create_product",
+            description = "Create a digital product or AI-run service the business can sell.",
+            schemaJson = """
+                {"type":"object","properties":{
+                  "name":{"type":"string"},"description":{"type":"string"},
+                  "price_cents":{"type":"integer"},
+                  "kind":{"type":"string","enum":["website","image","copy","document","code","other"]}
+                },"required":["name","price_cents"]}
+            """.trimIndent(),
+            risk = ToolRisk.AUTO
+        ),
+        ToolSpec(
+            name = "create_checkout",
+            description = "Create a Stripe checkout link for a product, only once a buyer is ready to pay.",
+            schemaJson = """
+                {"type":"object","properties":{"product":{"type":"string","description":"Product name"}},"required":["product"]}
+            """.trimIndent(),
+            risk = ToolRisk.ASK
         )
     )
 
@@ -217,6 +282,86 @@ class ToolRegistry(
                 "Added ${prospect.company} to the pipeline."
             }
 
+            "message_teammate" -> {
+                val targetRaw = args.optString("to")
+                val teammate = store.snapshot().agents.firstOrNull {
+                    it.id != agent.id && (it.name.equals(targetRaw, ignoreCase = true) ||
+                        it.role.equals(targetRaw, ignoreCase = true))
+                }
+                if (teammate == null) {
+                    "No teammate called $targetRaw. Team: " +
+                        store.snapshot().agents.filter { it.id != agent.id }.joinToString { it.name }
+                } else {
+                    store.update { state ->
+                        state.copy(
+                            messages = state.messages + Message(
+                                agentId = agent.id,
+                                toAgentId = teammate.id,
+                                kind = MessageKind.DM,
+                                body = args.optString("message")
+                            )
+                        )
+                    }
+                    "Messaged ${teammate.name}."
+                }
+            }
+
+            "open_website" -> BrowserHub.open(args.optString("url"))
+
+            "read_page" -> BrowserHub.readPage()
+
+            "click_text" -> BrowserHub.click(args.optString("text"))
+
+            "type_into" -> BrowserHub.typeInto(args.optString("target"), args.optString("value"))
+
+            "create_product" -> {
+                val kind = when (args.optString("kind").lowercase()) {
+                    "website" -> DeliverableKind.WEBSITE
+                    "image" -> DeliverableKind.IMAGE
+                    "copy" -> DeliverableKind.COPY
+                    "document" -> DeliverableKind.DOCUMENT
+                    "code" -> DeliverableKind.CODE
+                    else -> DeliverableKind.OTHER
+                }
+                val product = Product(
+                    name = args.optString("name"),
+                    description = args.optString("description"),
+                    priceCents = args.optLong("price_cents"),
+                    kind = kind,
+                    createdBy = agent.id
+                )
+                store.update { state -> state.copy(products = state.products + product) }
+                "Created product \"${product.name}\" at $${product.priceCents / 100.0}."
+            }
+
+            "create_checkout" -> {
+                val wanted = args.optString("product")
+                val product = store.snapshot().products.firstOrNull {
+                    it.name.equals(wanted, ignoreCase = true)
+                }
+                when {
+                    product == null -> "No product called $wanted."
+                    !vault.load().hasStripe -> "No Stripe key in the vault, so no checkout was created."
+                    else -> runCatching {
+                        stripe.createPaymentLink(
+                            amountCents = product.priceCents,
+                            currency = store.snapshot().settings.currency,
+                            description = "${store.snapshot().settings.businessName} - ${product.name}"
+                        )
+                    }.fold(
+                        onSuccess = { url ->
+                            store.update { state ->
+                                state.copy(products = state.products.map {
+                                    if (it.id == product.id) it.copy(checkoutUrl = url, status = "on sale") else it
+                                })
+                            }
+                            "Checkout link for ${product.name}: $url"
+                        },
+                        onFailure = { "Stripe failed: ${it.message}" }
+                    )
+                }
+            }
+
             else -> "Unhandled tool: $name"
         }
     }
@@ -243,6 +388,7 @@ class ToolRegistry(
     private fun approvalTitle(name: String, args: JSONObject): String = when (name) {
         "send_email" -> "Send email to ${args.optString("to")}"
         "create_payment_link" -> "Create a Stripe link for $${args.optLong("amount_cents") / 100.0}"
+        "create_checkout" -> "Create a checkout link for ${args.optString("product")}"
         else -> "Run $name"
     }
 

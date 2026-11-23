@@ -135,6 +135,21 @@ data class Service(
     val active: Boolean = true
 )
 
+/** Something the business sells: a digital good or an AI-run service. */
+@Serializable
+data class Product(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val description: String = "",
+    val priceCents: Long = 0L,
+    val kind: DeliverableKind = DeliverableKind.OTHER,
+    val status: String = "draft",
+    val checkoutUrl: String = "",
+    val assetBody: String = "",
+    val createdBy: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 @Serializable
 data class SentMail(
     val id: String = UUID.randomUUID().toString(),
@@ -189,7 +204,10 @@ data class Settings(
     val autoApproveLowRisk: Boolean = true,
     val requireApprovalForEmail: Boolean = true,
     val requireApprovalForPayment: Boolean = true,
-    val currency: String = "usd"
+    val currency: String = "usd",
+    val goal: String = "Sell digital goods and AI-run services for Local Reach Workshop",
+    val autopilot: Boolean = false,
+    val buyingGuide: String = "Digital goods, AI-run services, websites, graphics, copy and automation for local businesses."
 )
 
 @Serializable
@@ -203,6 +221,7 @@ data class HiveState(
     val automations: List<Automation> = emptyList(),
     val prospects: List<Prospect> = emptyList(),
     val services: List<Service> = emptyList(),
+    val products: List<Product> = emptyList(),
     val sentMail: List<SentMail> = emptyList(),
     val inbox: List<InboxMail> = emptyList(),
     val suggestions: List<Suggestion> = emptyList(),
