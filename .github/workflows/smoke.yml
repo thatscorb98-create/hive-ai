@@ -1,0 +1,34 @@
+name: Smoke test release APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download release APK
+        run: curl -fsSL -o app.apk https://github.com/thatscorb98-create/hive-ai/releases/download/v2.15.1/hive-2.15.1-debug.apk
+
+      - name: Launch on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: |
+            adb install -r app.apk
+            adb logcat -c
+            adb shell am start -n com.hive.agents/.MainActivity
+            sleep 12
+            echo "--- pid ---"
+            adb shell pidof com.hive.agents || echo "not running"
+            adb logcat -d > full-logcat.txt
+            echo "--- crashes ---"
+            grep -n -A 60 "FATAL EXCEPTION" full-logcat.txt || echo "no FATAL EXCEPTION in logcat"
+            echo "--- app errors ---"
+            grep -n -A 30 -E "AndroidRuntime|com.hive.agents.*(Exception|Error)" full-logcat.txt | tail -120 || true
