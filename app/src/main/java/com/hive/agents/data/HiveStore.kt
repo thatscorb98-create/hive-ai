@@ -12,11 +12,13 @@ import java.io.File
  * Single source of truth for the app.
  *
  * Written atomically: the new state goes to a temp file and is renamed over the old one,
- * so a crash mid-write cannot leave a half-written state file behind.
+ * so a crash mid-write cannot leave a half-written state file behind. A second copy is
+ * kept in hive-state.bak and used if the main file is ever unreadable.
  */
 class HiveStore(context: Context) {
 
     private val file = File(context.filesDir, "hive-state.json")
+    private val backup = File(context.filesDir, "hive-state.bak")
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -35,18 +37,29 @@ class HiveStore(context: Context) {
         write(next)
     }
 
-    private fun load(): HiveState = runCatching {
-        if (file.exists()) json.decodeFromString<HiveState>(file.readText()) else HiveState()
-    }.getOrElse { HiveState() }
+    private fun load(): HiveState {
+        read(file)?.let { return it }
+        read(backup)?.let { restored ->
+            runCatching { file.writeText(backup.readText()) }
+            return restored
+        }
+        return HiveState()
+    }
+
+    private fun read(source: File): HiveState? = runCatching {
+        if (source.exists()) json.decodeFromString<HiveState>(source.readText()) else null
+    }.getOrNull()
 
     private fun write(state: HiveState) {
         runCatching {
+            val payload = json.encodeToString(state)
             val tmp = File(file.parentFile, "${file.name}.tmp")
-            tmp.writeText(json.encodeToString(state))
+            tmp.writeText(payload)
             if (!tmp.renameTo(file)) {
                 file.delete()
                 tmp.renameTo(file)
             }
+            backup.writeText(payload)
         }
     }
 }
