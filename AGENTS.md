@@ -35,11 +35,15 @@ You are working on an Android app that autonomous agents use to run a real busin
 - `AGENT_README.md`, `CHANGELOG.md` and the README status table are updated in the same version.
 - Commit message: `feat|fix|chore(scope): summary`, body explains why.
 
-## This version's invariants
+## This version's invariants (2.13.0)
 
 - `TeamEngine.runMission` dispatches tasks **in parallel** (`coroutineScope` + `async`). Do not turn it back into a sequential loop; the owner asked for simultaneous API work.
 - `ModelRouter` routes lead/product to Super, research/sales/marketing/showcase to Lightning, and the proofreader to DeepSeek. Keep a manual override and the Setup switch.
+- **Model ids must be resolved against `/v1/models`.** `deepseek-ai/deepseek-v4.1-flash` is retired; the current id is `deepseek-ai/deepseek-v4-flash`. `NimClient` must throw on HTTP/parse/empty failures, never return an error string as bot content, and must keep the 404/410 fallback.
 - The company loop belongs to `HiveViewModel.startLoop()`. It must stop when Autopilot is off and back off after a wholly failed shift. Paid, undelivered work is always the first mission.
+- The company starts with one lead, but `TeamEngine.ensureCoreTeam()` is the local safety net when the lead does not hire. Do not remove it; a broken model must not leave the app with one bot forever.
+- The bottom bar is exactly **Home, Chat, Browsers, Email, Settings**. Business and Studio are not tabs; products and services are made on demand.
+- Chat is a company chat: left rail of bot blobs, Company plus per-bot threads, and visible `DM`/`HANDOFF` messages. Do not collapse it back into a single card feed.
 - `deliver_work` is the only path that closes a delivered job; `record_sale` means payment received.
 
 ## Do not

@@ -1,5 +1,43 @@
 # Changelog
 
+## v2.13.0+20 — 2026-11-23
+
+Fixes the retired-model failure that made shifts look complete while doing nothing, gives the company a real chat and a station view, and cuts the app to the five tabs the owner asked for.
+
+**Fixed**
+- **HTTP 410 Gone**: 2.12 used `deepseek-ai/deepseek-v4.1-flash`, which NVIDIA has retired. The current id is `deepseek-ai/deepseek-v4-flash`. Saved settings and per-bot overrides are migrated on launch.
+- **Fake mission success**: `NimClient` used to return `"model call failed: ..."` as message content, so a failed task was marked DONE. It now throws `NimException` on HTTP errors, unreadable replies and empty responses. The task becomes FAILED and the mission becomes BLOCKED.
+- **Retired ids mid-session**: the client reads `/v1/models`, caches it, picks a live model from the same family when needed, and retries a 404/410 once on another live model.
+- **Stuck solo company**: if the lead still has not hired anyone after a shift (or on the next app open after a previous shift), `ensureCoreTeam()` locally onboards Scout, Closer, Spark, Maker, Demo and Proof.
+- **Run shift silent no-op**: shifts now serialise on a mutex; a tap while the loop is running waits instead of disappearing. A failed shift shows a notice and the bot reports in Chat.
+- **3D highlighted the wrong tab**: the station view now highlights Home; Browsers is selected only for the browser list.
+
+**Added**
+- **Grok Bot-style company chat**: `ChatScreen` has a left rail of bot blobs and a Company thread, per-bot threads, bot-to-bot handoffs and DMs, iMessage-dark bubbles, timestamps, a live working bar, and fenced-code blocks with Copy.
+- **StarNet-inspired station**: `HiveVizScreen` is now a 2.5D cutaway with seven department rooms, isometric lids, hallways as handoff lanes, bots at workstations, moving message packets, tap-to-isolate and a crew/work list.
+- **Visible handoffs**: task assignment from the lead, the assignee's acknowledgement and the result are all posted as real HANDOFF messages.
+- **Recent work on Home**: latest deliverables and customer samples are visible after the Business tab is removed.
+- Shared `AgentAvatar`; Home crew strip; five-tab shell.
+
+**Changed**
+- Bottom navigation is exactly **Home, Chat, Browsers, Email, Settings**. Business, Studio and Agents are gone as tabs. Team is reachable from Home and Chat; 3D is reachable from Home and Chat.
+- No global model header; Home, Chat and Settings show model context where it belongs.
+- Settings is a tab, not a back-stack screen; Email and Browsers are tabs without redundant back links.
+- Products and services are made by the bots on demand; there is no manual Business form.
+- Version 2.13.0 / versionCode 20.
+
+**Verified**
+- `gradle clean :app:assembleDebug` succeeds from a source-only copy of this tree: debug APK **28,187,801 bytes**, SHA-256 `ba4618f3210317194aa3f21d6156489d7ecf68076ff1180622f4db06b1f94ad6`.
+- APK metadata: `com.hive.agents`, versionCode 20, versionName 2.13.0, minSdk 28, targetSdk 35.
+- Not verified on a device or emulator: **no screen has been run**. The station, chat, handoffs, model fallback, crew seeding and loop are compiled, not exercised.
+
+**Known limits**
+- The foreground loop spends API credits while the app process is alive; turn Autopilot off to stop it. There is no daily cap yet.
+- Parallel tasks assigned to the same bot can interleave messages.
+- Stripe payments are recorded by the bot or the human; there is no webhook listener.
+- One browser window and one cookie jar for the whole app.
+- Background WorkManager shifts still use the standing goal rather than the foreground funnel order.
+
 ## v2.12.0+19 — 2026-11-23
 
 The company runs a continuous sales loop, the crew works in parallel on different models, and the hive deck shows the traffic.
