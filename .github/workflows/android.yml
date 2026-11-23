@@ -2,6 +2,11 @@ name: Android APK
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: Version name for the APK and release tag
+        required: true
+        default: "2.15.0"
 
 permissions:
   contents: write
@@ -13,6 +18,7 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      VERSION: ${{ inputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,29 +46,32 @@ jobs:
       - name: Stage APK
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/debug/app-debug.apk out/hive-2.14.0-debug.apk
-          sha256sum out/hive-2.14.0-debug.apk > out/hive-2.14.0-debug.apk.sha256
+          cp app/build/outputs/apk/debug/app-debug.apk "out/hive-$VERSION-debug.apk"
+          sha256sum "out/hive-$VERSION-debug.apk" > "out/hive-$VERSION-debug.apk.sha256"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.14.0
+          tag_name: v${{ inputs.version }}
           target_commitish: main
-          name: Hive 2.14.0 - real model usage
+          name: Hive ${{ inputs.version }} - live dashboard sync
           body: |
-            Counts real model calls and token usage per hour, so hive-state.json carries a
-            `usage[]` array the Hive Station dashboard can graph next to messages.
+            Counts real model calls and token usage per hour, and can push snapshots to the Hive
+            Station dashboard relay so it no longer waits on an exported file.
 
-            - `calls` counts successful chat-completions requests. Retries are separate
+            - Settings -> LIVE SYNC takes the relay URL and a 16-64 character room key. The app
+              uploads a snapshot about two seconds after a change settles; the dashboard reads it
+              every four seconds.
+            - The relay key is removed from the uploaded document and stays on the phone.
+            - Model calls count successful chat-completions requests. Retries are separate
               requests and count separately.
-            - `inputTokens` / `outputTokens` come from the provider's `usage` object and stay 0
-              when it does not report them.
-            - Kept as 168 hourly buckets (about seven days); capped on every write.
+            - Token counts come from the provider's `usage` object and stay 0 when it is absent.
+            - Usage is kept as 168 hourly buckets (about seven days); capped on every write.
 
             Debug-signed, so it may not install over an older build with a different signing
             key (uninstall the old app first). Not tested on a device in CI.
           files: |
-            out/hive-2.14.0-debug.apk
-            out/hive-2.14.0-debug.apk.sha256
+            out/hive-${{ inputs.version }}-debug.apk
+            out/hive-${{ inputs.version }}-debug.apk.sha256
           overwrite_files: true
           make_latest: true
