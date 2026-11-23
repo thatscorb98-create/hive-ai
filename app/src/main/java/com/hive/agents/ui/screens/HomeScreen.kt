@@ -1,6 +1,8 @@
 package com.hive.agents.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,97 +12,120 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hive.agents.data.HiveState
 import com.hive.agents.data.MessageKind
+import com.hive.agents.data.Models
 import com.hive.agents.data.ProspectStage
+import com.hive.agents.ui.AgentAvatar
 import com.hive.agents.ui.HiveCard
 import com.hive.agents.ui.Pill
 import com.hive.agents.ui.SectionHeader
 import com.hive.agents.ui.theme.Amber
-import com.hive.agents.ui.theme.Danger
 import com.hive.agents.ui.theme.Good
 import com.hive.agents.ui.theme.PanelHigh
 import com.hive.agents.ui.theme.Teal
 import com.hive.agents.ui.theme.TextDim
+import com.hive.agents.ui.theme.TextMain
 import com.hive.agents.ui.timeAgo
 
+/**
+ * The dashboard. It answers three questions at a glance: is the company running, who is on the
+ * crew, and what did they just do. Commands and conversation live in Chat; this screen stays an
+ * overseer's board rather than a second control panel.
+ */
 @Composable
 fun HomeScreen(
     state: HiveState,
+    hasKey: Boolean,
     autopilot: Boolean,
+    loopOn: Boolean,
     busy: Boolean,
-    onCommand: (String) -> Unit,
     onRunShift: () -> Unit,
     onOpenViz: () -> Unit,
-    onOpenStudio: () -> Unit,
-    onOpenBrowsers: () -> Unit,
-    onOpenInbox: () -> Unit,
-    onOpenMissions: () -> Unit,
-    onOpenMission: (String) -> Unit
+    onOpenChat: () -> Unit,
+    onOpenTeam: () -> Unit,
+    onSetup: () -> Unit
 ) {
-    var command by remember { mutableStateOf("") }
-
     val sales = state.salesMade
     val revenueCents = state.revenueCents
     val pipelineCents = state.prospects
         .filter { it.stage != ProspectStage.WON && it.stage != ProspectStage.LOST }
         .sumOf { it.valueCents }
     val activity = state.messages.sortedByDescending { it.createdAt }.take(6)
+    val live = autopilot && hasKey
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         item {
             Row(
-                Modifier.fillMaxWidth().padding(top = 8.dp),
+                Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(Modifier.width(8.dp).height(8.dp).background(if (autopilot) Good else TextDim))
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    if (autopilot) "All systems online" else "Autopilot is off",
-                    fontSize = 11.sp,
-                    color = if (autopilot) Good else TextDim
+                Column(Modifier.weight(1f)) {
+                    Text("HIVE", fontSize = 22.sp, fontWeight = FontWeight.Black, color = Amber)
+                    Text(
+                        "${state.agents.size} bots - ${Models.label(state.settings.model)}",
+                        fontSize = 10.sp,
+                        color = TextDim
+                    )
+                }
+                Box(
+                    Modifier
+                        .width(8.dp)
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(if (live) Good else TextDim)
                 )
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = onOpenViz) { Text("3D", fontSize = 12.sp) }
+                Spacer(Modifier.width(5.dp))
+                Text(if (loopOn) "LIVE" else if (autopilot) "ON" else "OFF", fontSize = 9.sp, color = TextDim)
+                TextButton(onClick = onOpenViz) { Text("3D", fontSize = 12.sp, color = Amber) }
             }
         }
 
         item {
             HiveCard(accent = Amber) {
-                Text("Your business is running", fontSize = 13.sp, color = TextDim)
                 Text(
-                    if (autopilot) "autonomously." else "when you run a shift.",
+                    when {
+                        loopOn -> "COMPANY LOOP RUNNING"
+                        autopilot -> "AUTOPILOT READY"
+                        else -> "AUTOPILOT PAUSED"
+                    },
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (live) Good else TextDim
+                )
+                Text(
+                    if (autopilot) "The company is running itself." else "Your company is ready.",
                     fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = TextMain
                 )
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.Bottom) {
-                    Text("$sales", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Good)
+                    Text("$sales", fontSize = 34.sp, fontWeight = FontWeight.Black, color = Good)
                     Text(
                         "  sales made",
                         fontSize = 13.sp,
                         color = TextDim,
-                        modifier = Modifier.padding(bottom = 6.dp)
+                        modifier = Modifier.padding(bottom = 7.dp)
                     )
                 }
                 Text(
@@ -109,19 +134,19 @@ fun HomeScreen(
                     fontSize = 11.sp,
                     color = TextDim
                 )
-                if (autopilot) {
-                    Text(
-                        "Shifts start when you open the app, then every 15 minutes.",
-                        fontSize = 10.sp,
-                        color = TextDim
-                    )
+                if (!hasKey) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("Add your NVIDIA key and Chief can start the company.", fontSize = 11.sp, color = Amber)
                 }
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = onRunShift) {
+                    Button(onClick = onRunShift, enabled = hasKey && !busy) {
                         Text(if (busy) "Working..." else "Run a shift")
                     }
-                    TextButton(onClick = onOpenStudio) { Text("Studio", fontSize = 12.sp) }
+                    OutlinedButton(onClick = onOpenViz) { Text("3D station") }
+                }
+                if (!hasKey) {
+                    TextButton(onClick = onSetup) { Text("Add NVIDIA key", fontSize = 12.sp) }
                 }
             }
         }
@@ -137,103 +162,140 @@ fun HomeScreen(
             }
         }
 
-        item { SectionHeader("AGENT NETWORK", "${state.agents.size} bots working together") }
-
-        if (state.agents.isEmpty()) {
-            item { Text("No bots yet.", color = TextDim, fontSize = 12.sp) }
+        item {
+            SectionHeader("CREW", "${state.agents.size} bots - tap to manage")
         }
 
-        items(state.agents) { agent ->
-            val last = state.messages.lastOrNull { it.agentId == agent.id }
-            val status = when {
-                busy -> "working..."
-                last == null -> "ready"
-                System.currentTimeMillis() - last.createdAt < 600_000 -> last.body.take(48)
-                else -> "idle"
-            }
-            HiveCard {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.width(20.dp).height(20.dp).clip(RoundedCornerShape(50))
-                        .background(if (agent.primary) Amber else Teal))
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(agent.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                        Text("${agent.role} - $status", fontSize = 11.sp, color = TextDim)
+        item {
+            if (state.agents.isEmpty()) {
+                HiveCard {
+                    Text("No crew yet. Chief will hire the first team after a shift.", fontSize = 12.sp, color = TextDim)
+                }
+            } else {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    state.agents.forEach { agent ->
+                        Column(
+                            Modifier
+                                .width(62.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable(onClick = onOpenTeam)
+                                .padding(vertical = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            AgentAvatar(agent, size = 38.dp, selected = agent.primary)
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                agent.name,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                if (agent.primary) "lead" else agent.role,
+                                fontSize = 8.sp,
+                                color = TextDim,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
-                    Pill(if (agent.active) "active" else "idle", Good)
                 }
             }
         }
 
-        item { SectionHeader("LIVE ACTIVITY", "what the team is doing") }
+        item {
+            SectionHeader("RECENT WORK", "${state.deliverables.size} deliverables - samples are customer-ready")
+        }
+
+        if (state.deliverables.isEmpty()) {
+            item {
+                HiveCard {
+                    Text("Nothing produced yet. The crew will make samples as it learns what sells.", fontSize = 11.sp, color = TextDim)
+                }
+            }
+        }
+
+        items(state.deliverables.sortedByDescending { it.createdAt }.take(3)) { deliverable ->
+            HiveCard(accent = if (deliverable.isSample) Amber else Teal) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(deliverable.title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Pill(if (deliverable.isSample) "sample" else deliverable.kind.name.lowercase(), if (deliverable.isSample) Amber else Teal)
+                }
+                Text(deliverable.body.replace("\n", " ").take(160), fontSize = 10.sp, color = TextDim, maxLines = 2)
+            }
+        }
+
+        item {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("LIVE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextDim, modifier = Modifier.weight(1f))
+                TextButton(onClick = onOpenChat) { Text("Open chat", fontSize = 11.sp) }
+            }
+        }
 
         if (activity.isEmpty()) {
-            item { Text("Quiet so far. Give the team a command below.", color = TextDim, fontSize = 12.sp) }
+            item {
+                HiveCard {
+                    Text("The team is starting up. Open Chat and say hello to Chief.", fontSize = 12.sp, color = TextDim)
+                }
+            }
         }
 
         items(activity) { message ->
             val name = if (message.fromUser) "You" else state.agent(message.agentId)?.name ?: "System"
-            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.width(6.dp).height(6.dp).clip(RoundedCornerShape(50)).background(
-                    when (message.kind) {
-                        MessageKind.DM -> Amber
-                        MessageKind.HANDOFF -> Good
-                        else -> Teal
-                    }
-                ))
+            val to = message.toAgentId.takeIf { it.isNotBlank() }?.let { state.agent(it)?.name }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onOpenChat)
+                    .padding(vertical = 5.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                val agent = state.agent(message.agentId)
+                if (agent != null && !message.fromUser) {
+                    AgentAvatar(agent, size = 26.dp, showOnline = false)
+                } else {
+                    Box(
+                        Modifier.size(26.dp).clip(RoundedCornerShape(9.dp)).background(PanelHigh),
+                        contentAlignment = Alignment.Center
+                    ) { Text("Y", fontSize = 10.sp, color = Teal) }
+                }
                 Spacer(Modifier.width(8.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(
-                        "$name: ${message.body.take(90)}",
-                        fontSize = 12.sp
-                    )
-                }
-                Text(timeAgo(message.createdAt), fontSize = 10.sp, color = TextDim)
-            }
-        }
-
-        item { SectionHeader("QUICK ACTIONS", "") }
-        item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                TextButton(onClick = onOpenBrowsers) { Text("Browsers", fontSize = 12.sp) }
-                TextButton(onClick = onOpenInbox) { Text("Email", fontSize = 12.sp) }
-                TextButton(onClick = onOpenStudio) { Text("Products", fontSize = 12.sp) }
-                TextButton(onClick = onOpenMissions) { Text("Missions", fontSize = 12.sp) }
-            }
-        }
-
-        item { SectionHeader("MISSIONS", "") }
-        items(state.missions.sortedByDescending { it.createdAt }.take(4)) { mission ->
-            HiveCard(onClick = { onOpenMission(mission.id) }) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(mission.title, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                    Pill(
-                        mission.status.name.lowercase(),
-                        if (mission.status.name == "DONE") Good else if (mission.status.name == "BLOCKED") Danger else Amber
-                    )
-                }
-            }
-        }
-
-        item {
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = command,
-                    onValueChange = { command = it },
-                    singleLine = true,
-                    placeholder = { Text("Give the team a command...", fontSize = 12.sp) },
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(Modifier.width(8.dp))
-                Button(onClick = {
-                    if (command.isNotBlank()) {
-                        onCommand(command)
-                        command = ""
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            if (to != null) "$name -> $to" else name,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (message.kind == MessageKind.HANDOFF) Good else TextDim
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(timeAgo(message.createdAt), fontSize = 9.sp, color = TextDim)
                     }
-                }) { Text("Send") }
+                    Text(
+                        message.body.replace("\n", " ").take(120),
+                        fontSize = 12.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
+        }
+
+        item {
             Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Pill(if (state.agents.size > 1) "crew online" else "hiring", if (state.agents.size > 1) Good else Amber)
+                Pill("${state.deliverables.size} deliverables", Teal)
+            }
+            Spacer(Modifier.height(22.dp))
         }
     }
 }
