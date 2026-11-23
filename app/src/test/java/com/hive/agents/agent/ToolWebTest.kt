@@ -27,4 +27,3 @@ class ToolWebTest {
     fun acceptsAnOrdinaryPublicHost() {
         assertTrue(ToolWeb.isSafePublicUrl("https://1.1.1.1/path?q=1"))
     }
-}
