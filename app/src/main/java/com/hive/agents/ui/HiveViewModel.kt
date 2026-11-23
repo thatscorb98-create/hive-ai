@@ -21,12 +21,17 @@ import com.hive.agents.data.MissionStatus
 import com.hive.agents.data.Models
 import com.hive.agents.data.ProspectStage
 import com.hive.agents.data.Settings
+import com.hive.agents.data.TaskStatus
 import com.hive.agents.data.VaultKeys
 import com.hive.agents.service.AutopilotWorker
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
@@ -54,6 +59,9 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
 
+    private val _loopOn = MutableStateFlow(false)
+    val loopOn: StateFlow<Boolean> = _loopOn.asStateFlow()
+
     private val _notice = MutableStateFlow("")
     val notice: StateFlow<String> = _notice.asStateFlow()
 
@@ -63,7 +71,12 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
     private val _selectedMission = MutableStateFlow<String?>(null)
     val selectedMission: StateFlow<String?> = _selectedMission.asStateFlow()
 
-    private var lastAutoKick = 0L
+    private var loopJob: Job? = null
+
+    private companion object {
+        const val LOOP_PAUSE_MS = 45_000L
+        const val FAIL_PAUSE_MS = 5 * 60_000L
+    }
 
     init {
         engine.bootstrap()
@@ -71,18 +84,32 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Called every time the app comes to the front. If autopilot is on and the last shift was
-     * more than ten minutes ago, the team starts working without being asked.
+     * Autopilot is a loop, not one shift. While the app process is alive the company keeps
+     * moving through the sales pipeline: research, sample, outreach, follow-up, payment,
+     * delivery. WorkManager adds a shift every 15 minutes when the app is not open.
      */
     fun onAppForeground() {
         val current = store.snapshot()
         if (!current.settings.autopilot) return
         if (!vault.load().hasNim) return
-        val now = System.currentTimeMillis()
-        if (now - current.settings.lastShiftAt < 10 * 60_000L) return
-        if (now - lastAutoKick < 60_000L) return
-        lastAutoKick = now
-        runShift()
+        startLoop()
+    }
+
+    private fun startLoop() {
+        if (loopJob?.isActive == true) return
+        loopJob = viewModelScope.launch {
+            _loopOn.value = true
+            try {
+                while (isActive) {
+                    val current = store.snapshot()
+                    if (!current.settings.autopilot || !vault.load().hasNim) break
+                    val healthy = runShiftInternal()
+                    delay(if (healthy) LOOP_PAUSE_MS else FAIL_PAUSE_MS)
+                }
+            } finally {
+                _loopOn.value = false
+            }
+        }
     }
 
     // ---------- setup ----------
@@ -96,6 +123,7 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             "The vault could not be read back after saving. Try again before closing the app."
         }
+        if (reloaded.hasNim && store.snapshot().settings.autopilot) startLoop()
     }
 
     fun updateSettings(settings: Settings) {
@@ -109,6 +137,10 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
         if (enabled) {
             scheduleAutopilot()
             onAppForeground()
+        } else {
+            loopJob?.cancel()
+            loopJob = null
+            _loopOn.value = false
         }
     }
 
@@ -133,26 +165,95 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Human-triggered shift. Same code path the worker uses. */
+    /** Human-triggered shift. Same code path the worker and the loop use. */
     fun runShift() {
-        if (_busy.value) return
-        engine.bootstrap()
-        val stateNow = store.snapshot()
-        store.update { it.copy(settings = it.settings.copy(lastShiftAt = System.currentTimeMillis())) }
-        val next = stateNow.missions.firstOrNull {
-            it.status == MissionStatus.PLANNED || it.status == MissionStatus.RUNNING
-        } ?: Mission(
-            title = stateNow.settings.goal.ifBlank { "Earn for the business" },
-            brief = "Pick the most promising way to bring in revenue this shift and execute it."
-        ).also { mission ->
-            store.update { current -> current.copy(missions = current.missions + mission) }
+        viewModelScope.launch { runShiftInternal() }
+    }
+
+    /** Returns false when every task in the shift failed, so the loop backs off instead of burning credits. */
+    private suspend fun runShiftInternal(): Boolean {
+        if (_busy.value) {
+            delay(2_000)
+            return true
         }
+        engine.bootstrap()
         _busy.value = true
-        viewModelScope.launch {
-            runCatching { engine.runMission(next.id) }
-                .onFailure { _notice.value = it.message ?: "Shift failed" }
+        try {
+            val stateNow = store.snapshot()
+            val existing = stateNow.missions.firstOrNull {
+                it.status == MissionStatus.PLANNED || it.status == MissionStatus.RUNNING
+            }
+            val mission = existing ?: nextCompanyMission(stateNow)
+            store.update {
+                it.copy(
+                    settings = it.settings.copy(lastShiftAt = System.currentTimeMillis()),
+                    missions = if (existing == null) it.missions + mission else it.missions
+                )
+            }
+            engine.runMission(mission.id)
+            val tasks = store.snapshot().tasks.filter { it.missionId == mission.id }
+            return tasks.isEmpty() || tasks.any { it.status == TaskStatus.DONE }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            _notice.value = error.message ?: "Shift failed"
+            return false
+        } finally {
             _busy.value = false
         }
+    }
+
+    /**
+     * Picks the next useful stage of the company loop instead of inventing a new mission each
+     * time. Paid work comes first; then missing research; then an offer; then samples; then
+     * outreach; then follow-up; then a fresh lead hunt.
+     */
+    private fun nextCompanyMission(state: HiveState): Mission {
+        val paidWaiting = state.prospects.count { it.paid && !it.delivered }
+        val noEmail = state.prospects.count {
+            it.email.isBlank() && it.stage != ProspectStage.LOST && it.stage != ProspectStage.WON
+        }
+        val ready = state.prospects.count {
+            it.email.isNotBlank() && (it.stage == ProspectStage.NEW || it.stage == ProspectStage.QUALIFIED)
+        }
+        val pitched = state.prospects.count {
+            it.stage == ProspectStage.PITCHED || it.stage == ProspectStage.NEGOTIATING
+        }
+        val samples = state.deliverables.count { it.isSample }
+
+        val title: String
+        val brief: String
+        when {
+            paidWaiting > 0 -> {
+                title = "Deliver paid work"
+                brief = "$paidWaiting customer(s) have paid. Do the work, save it, and mark each one delivered with deliver_work. A paying customer comes before a new lead."
+            }
+            noEmail > 0 -> {
+                title = "Research the pipeline"
+                brief = "$noEmail lead(s) are missing contact details. Research each real business with search_web and fetch_page, find the right person and a verified email, then update the pipeline with add_leads. Never guess an address."
+            }
+            state.products.isEmpty() -> {
+                title = "Create something to sell"
+                brief = "Package one concrete offer for Local Reach Workshop: a digital product or a done-for-you service with a clear price and outcome. Save it with create_product."
+            }
+            samples < 3 -> {
+                title = "Make samples buyers can see"
+                brief = "Make three samples of the work the company sells: a sample audit, a sample post set and a sample landing page. Save each with create_sample so a buyer can judge the quality before paying. If there is no showcase bot yet, hire one first or make the samples yourself."
+            }
+            ready > 0 -> {
+                title = "Contact qualified leads"
+                brief = "$ready qualified lead(s) have an email. Send a short, specific outreach email about what the company can do for them, then update the pipeline."
+            }
+            pitched > 0 -> {
+                title = "Follow up and close"
+                brief = "$pitched lead(s) have been pitched. Follow up with a useful next step, ask for the sale, and record payment with record_sale when it lands."
+            }
+            else -> {
+                title = "Find and qualify real local leads"
+                brief = "Search for real local businesses that need what Local Reach Workshop sells. Verify each one, add the best leads with add_leads, and note what the company can do for them."
+            }
+        }
+        return Mission(id = UUID.randomUUID().toString(), title = title, brief = brief)
     }
 
     // ---------- missions ----------
@@ -250,7 +351,7 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Command bar: talk to the company lead. */
+    /** Command bar: talk to the orchestrator. */
     fun command(text: String) {
         val chief = store.snapshot().orchestrator ?: return
         messageAgent(chief.id, text)
@@ -284,8 +385,19 @@ class HiveViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- sales ----------
 
     fun moveProspect(id: String, stage: ProspectStage) {
+        val now = System.currentTimeMillis()
         store.update { state ->
-            state.copy(prospects = state.prospects.map { if (it.id == id) it.copy(stage = stage) else it })
+            state.copy(prospects = state.prospects.map {
+                if (it.id == id) {
+                    it.copy(
+                        stage = stage,
+                        paid = it.paid || stage == ProspectStage.WON,
+                        updatedAt = now
+                    )
+                } else {
+                    it
+                }
+            })
         }
     }
 
