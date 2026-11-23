@@ -13,8 +13,8 @@ android {
         applicationId = "com.hive.agents"
         minSdk = 28
         targetSdk = 35
-        versionCode = 23
-        versionName = "2.13.3"
+        versionCode = 24
+        versionName = "2.13.4"
     }
 
     buildTypes {
@@ -68,4 +68,8 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-tooling-preview")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation("org.json:json:20240303")
 }
