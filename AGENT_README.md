@@ -1,10 +1,20 @@
 # Agent handoff — read this first
 
-**Last updated:** v2.13.1+21, 2026-11-23
-**Build:** debug APK 28,187,801 bytes, SHA-256 `a993587733c08881343812405903679e687f1b64057ab135874ad8be758b1c33`
+**Last updated:** v2.13.2+22, 2026-11-23
+**Build:** debug APK 28,204,185 bytes, SHA-256 `6255f1ed5bdf1ef510304f323419afe15ec77e87926c90b01a3bbfa04b912f91`
 **Runtime status:** compiles cleanly; **nothing has been run on a device or emulator**. No screen or tool has been exercised.
 
 This file is the short version for whichever coding agent picks the project up next. `AGENTS.md` has the hard rules, `CHANGELOG.md` has history, `docs/product-spec.md` has behaviour that must not drift. Update this file on **every** version (see the last section).
+
+## What changed in 2.13.2
+
+- **Empty reasoning responses are retried, not treated as bot answers.** NVIDIA's reasoning models count hidden reasoning against `max_tokens`; the old planner budget (500) and task budget (1,200) could be exhausted before any answer, producing HTTP 200 with `content: null`. The planner now gets 3,000, tool calls get 8,192, and an empty response retries at twice the budget and then on another live model. The error includes `finish_reason`.
+- **Tool calling uses the real protocol.** `NimClient.Msg` now carries assistant `toolCalls` and tool `toolCallId`. `TeamEngine.converse`/`dispatch` echo the assistant's calls and send results as `role: "tool"` messages. The old code sent "Calling tools." as assistant text and every result as a user message; that is why the model repeated calls and eventually gave up.
+- **No more dead-end tool budget.** Both loops run eight rounds; if they exhaust it, `wrapUp()` makes one no-tools call asking for a short report. "Stopped after six tool rounds" cannot be the final answer any more.
+- **Planning errors are visible.** If planning fails, the lead posts the reason and says it is using a fallback task.
+- **Search survives a DuckDuckGo challenge.** DDG can return HTTP 202 with no results. `search_web` falls through to Bing RSS (titles, links, snippets) with browser headers. The tool description asks for a city/region for local leads.
+- **Nemotron tool calls force non-empty content.** `chat_template_kwargs: {"force_nonempty_content": true}` is sent to Nemotron models when tools are offered, as NVIDIA recommends. It is not sent to DeepSeek.
+- Version 2.13.2 / code 22.
 
 ## What changed in 2.13.1
 
@@ -33,7 +43,7 @@ echo "sdk.dir=/path/to/android-sdk" > local.properties
 gradle clean :app:assembleDebug
 ```
 
-Expected: `BUILD SUCCESSFUL`, `app/build/outputs/apk/debug/app-debug.apk`, versionCode 21 / versionName 2.13.1. A source-only copy of this tree (no build outputs) produced the APK above. The build is debug-signed, so it cannot install over the old 2.9.0/2.10.0 builds; the original release keystore is still missing. This is a known blocker, not a regression.
+Expected: `BUILD SUCCESSFUL`, `app/build/outputs/apk/debug/app-debug.apk`, versionCode 22 / versionName 2.13.2. A source-only copy of this tree (no build outputs) produced the APK above. The build is debug-signed, so it cannot install over the old 2.9.0/2.10.0 builds; the original release keystore is still missing. This is a known blocker, not a regression.
 
 ## Architecture map
 
@@ -41,10 +51,11 @@ Expected: `BUILD SUCCESSFUL`, `app/build/outputs/apk/debug/app-debug.apk`, versi
 |---|---|
 | State and models, model-id migration | `data/Models.kt`, `data/HiveStore.kt` |
 | Encrypted keys and backup | `data/KeyVault.kt` |
-| NVIDIA client, live catalog and fallback | `net/NimClient.kt` |
+| NVIDIA client, live catalog, empty-reasoning retry, tool-call wire format | `net/NimClient.kt` |
 | Agent loop, prompts, hiring, mission dispatch, crew fallback | `agent/TeamEngine.kt` |
 | Model routing | `agent/ModelRouter.kt` |
-| Tools and approval gates | `agent/ToolRegistry.kt`, `agent/ApprovalBroker.kt` |
+| Tool definitions; registry dispatch and approval gates | `agent/ToolSpecs.kt`, `agent/ToolRegistry.kt`, `agent/ApprovalBroker.kt` |
+| Web research with Bing RSS fallback; approval copy | `agent/ToolWeb.kt`, `agent/ToolApproval.kt` |
 | Proofreading gate | `agent/Proofreader.kt` |
 | Continuous loop, pipeline stage choice, shift mutex | `ui/HiveViewModel.kt` |
 | Five-tab navigation, lifecycle, browser handoff | `ui/HiveApp.kt` |
@@ -69,10 +80,15 @@ Expected: `BUILD SUCCESSFUL`, `app/build/outputs/apk/debug/app-debug.apk`, versi
 7. **Payment links always require human approval.** Email approval is the owner's switch; the proofreader still runs when it is off.
 8. **Keys, EIN and state keep their `.bak` copies.** No secret ever goes into the repo or an APK.
 9. **The station/chat must show real state.** No invented bots, messages, tasks or sales. The UI is a projection of `HiveState`; `NimClient` errors are shown as errors.
+10. **Tool results stay real tool results.** Echo the assistant's `tool_calls` and answer each with `role: "tool"` plus its `tool_call_id`. Never replace a call with "Calling tools." or send the result as a user message; the model loses the connection and repeats the call.
+11. **Reasoning models need room for reasoning.** Keep the planner at 3,000 tokens and tool calls at 8,192 or more. An empty response must retry with a larger budget and then another live model, never become a bot reply.
+12. **Search must not treat a challenge page as empty results.** DuckDuckGo can answer 202 with no result markup; fall through to Bing RSS and return titles, links and snippets.
 
 ## Known gaps / next work
 
 - No runtime verification. The station, chat rail, code blocks, crew fallback, model fallback and continuous loop are compiled only.
+- No NVIDIA key was available while building 2.13.2: the empty-reasoning retry, real tool-call protocol and wrap-up call have not been sent to the live API.
+- Search now relies on public DuckDuckGo and Bing pages. Either can rate-limit or change its markup; a paid search API is the durable fix if lead research becomes critical.
 - The continuous loop spends NVIDIA credits while the app process lives. There is no per-day cap yet.
 - Background WorkManager shifts still start from the standing goal; the foreground loop uses `nextCompanyMission()`. Unify them if the owner wants the exact funnel order in the background too.
 - Parallel tasks assigned to the same bot can interleave their messages; the lead should assign distinct roles.
