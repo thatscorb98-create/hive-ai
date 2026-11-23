@@ -44,7 +44,7 @@ fun MissionScreen(
 
     if (mission == null) {
         Column(Modifier.fillMaxSize()) {
-            BackRow("Missions", onBack)
+            BackRow("Home", onBack)
             EmptyState("That mission is gone.")
         }
         return
@@ -55,7 +55,7 @@ fun MissionScreen(
     val deliverables = state.deliverables.filter { it.missionId == mission.id }
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        item { BackRow("Missions", onBack) }
+        item { BackRow("Home", onBack) }
 
         item {
             Text(mission.title, fontSize = 20.sp, fontWeight = FontWeight.Bold)

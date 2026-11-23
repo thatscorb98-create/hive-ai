@@ -51,7 +51,7 @@ fun StudioScreen(
     var idea by remember { mutableStateOf("") }
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        item { BackRow("Missions", onBack) }
+        item { BackRow("Home", onBack) }
 
         item {
             Text("Studio", fontSize = 20.sp, fontWeight = FontWeight.Bold)

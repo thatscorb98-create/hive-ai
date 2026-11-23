@@ -56,7 +56,7 @@ fun HiveVizScreen(state: HiveState, onBack: () -> Unit) {
     val recentDm = state.messages.lastOrNull { it.kind == MessageKind.DM || it.kind == MessageKind.HANDOFF }
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        item { BackRow("Team", onBack) }
+        item { BackRow("Home", onBack) }
 
         item {
             Text("Hive view", fontSize = 20.sp, fontWeight = FontWeight.Bold)
