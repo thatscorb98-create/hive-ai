@@ -26,7 +26,7 @@ Production-readiness hardening: prompt-injection containment, truthful sales acc
 
 **Verified**
 - `gradle clean :app:assembleDebug :app:testDebugUnitTest :app:lintDebug --no-build-cache` succeeds: debug APK **28,269,721 bytes**, SHA-256 `62d36089f5d4cba567c3f66594f12da853e03245475fe8a2207119e35e6fdf11`.
-- 26 unit tests pass (policy, email rules, URL guards, shift serialization, store caps/backup/failure reporting, settings defaults, paid-only accounting and mail parsing); lint reports 0 errors.
+- 26 unit tests pass (policy, email rules, URL guards, shift serialization, store caps/backup/failure reporting, settings defaults, paid-only accounting, mail parsing); lint reports 0 errors.
 - APK metadata: `com.hive.agents`, versionCode 24, versionName 2.13.4, minSdk 28, targetSdk 35.
 - Not verified on a device or emulator, and no NVIDIA/AgentMail/Stripe keys were available: nothing has been exercised against a live service.
 
@@ -49,13 +49,13 @@ Makes the crew actually work together: every shift hands a job to several bots, 
 - **A chat order to the boss is now a mission.** `HiveViewModel.messageAgent` sent an order to the boss through `converse`, which could only answer and call a few tools itself. Messages to the primary bot now go through `TeamEngine.takeOrder`: it creates a mission from the order, plans it, dispatches the whole team in waves, and replies with the real per-bot result list. Talking to a specialist is still a direct conversation.
 
 **Added**
-- **Google search, optionally.** `search_web` tries the Google Custom Search JSON API first when a Google API key and search engine id (`cx`) are in the vault, then DuckDuckGo, then Bing RSS. Google has no free scraping endpoint, which is why this is a key pair and not a default.
+- **Google search, optionally.** `search_web` tries the Google Custom Search JSON API first when a Google API key and search engine id (`cx`) are in the vault, then DuckDuckGo, then Bing RSS. Google has no free scraping endpoint, which is why this is a key pair and not a default. Settings has both fields and a note.
 - `VaultKeys.googleSearchKey`, `VaultKeys.googleSearchCx`, `VaultKeys.hasGoogle`.
 - **The state file cannot grow without limit.** A busy shift writes around twenty messages and the whole state is rewritten on every change, so an uncapped file would eventually make every write slow. `HiveStore.update` now keeps the last 600 messages, 400 tasks, 800 memory entries and 200 inbox items. Pipeline, products, deliverables and paid work are never trimmed.
 - Version 2.13.3 / versionCode 23.
 
 **Verified**
-- `gradle clean :app:assembleDebug --no-build-cache` succeeds from a fresh clone of `main`: debug APK **28,236,953 bytes**, SHA-256 `b458b76f8d627b3f1bd1b3110039fc1cb2b97201b5062ac83fe0ce11`. An incremental local build produced a different size, so the number above is the clean-clone build.
+- `gradle clean :app:assembleDebug --no-build-cache` succeeds from a fresh clone of `main`: debug APK **28,236,953 bytes**, SHA-256 `b458b76f8d62707301f9b2031bd1b3110039fc1cb2b97201b5062ab83fe0ce11`. An incremental local build produced a different size, so the number above is the clean-clone build.
 - APK metadata: `com.hive.agents`, versionCode 23, versionName 2.13.3, minSdk 28, targetSdk 35.
 - Not verified on a device or emulator, and no NVIDIA API key was available: the new planning fallback, waves, handoff prompts, `takeOrder` path and Google branch are compiled, not exercised against the live model.
 
@@ -76,7 +76,7 @@ Fixes the empty reasoning responses that blocked Scout, the tool loop that left 
 - Version 2.13.2 / versionCode 22.
 
 **Verified**
-- `gradle clean :app:assembleDebug` succeeds from a fresh public clone at commit `4ed3c3a`: debug APK **28,204,185 bytes**, SHA-256 `6255f1ed5bdf1ef510304f323419afe15ec77e87926c90b01a3bbfa412f91`.
+- `gradle clean :app:assembleDebug` succeeds from a fresh public clone at commit `4ed3c9a`: debug APK **28,204,185 bytes**, SHA-256 `6255f1ed5bdf1ef510304f323419afe15ec77e87926c90b01a3bbfa04b912f91`.
 - APK metadata: `com.hive.agents`, versionCode 22, versionName 2.13.2, minSdk 28, targetSdk 35.
 - Downloaded again from Catbox after upload: hash matched, zip structure clean.
 - DuckDuckGo returned HTTP 202 with no results from the build VM; Bing RSS returned HTTP 200 with 10 items. The fallback parser is compiled, not run inside the app.
@@ -91,7 +91,7 @@ Starts the company on the first screen instead of waiting for a lifecycle event 
 - **Duplicate crew onboarding**: `TeamEngine.ensureCoreTeam()` is now guarded by a mutex and re-checks the roster under the lock, so the launch fallback and a failed shift cannot add the same six bots twice.
 
 **Verified**
-- `gradle clean :app:assembleDebug` succeeds: debug APK **28,187,801 bytes**, SHA-256 `a993587733c08881343812405968679e687f1b64057ab135874ad8be758b1c33`.
+- `gradle clean :app:assembleDebug` succeeds: debug APK **28,187,801 bytes**, SHA-256 `a993587733c08881343812405903679e687f1b64057ab135874ad8be758b1c33`.
 - APK metadata: versionCode 21, versionName 2.13.1, minSdk 28, targetSdk 35.
 - Downloaded again from Catbox after upload: hash matched, zip structure clean.
 - Not verified on a device or emulator: **no screen has been run**. The autostart path is compiled, not exercised.
@@ -123,8 +123,8 @@ Fixes the retired-model failure that made shifts look complete while doing nothi
 - Version 2.13.0 / versionCode 20.
 
 **Verified**
-- `gradle clean :app:assembleDebug` succeeds from a source-only copy of this tree: debug APK **28,187,801 bytes**, SHA-256 `ba4618f3210317194aa2b8f6156489d7ecf68076ff1180622f4db06b1f94ad6`.
-- APK metadata: versionCode 20, versionName 2.13.0, minSdk 28, targetSdk 35.
+- `gradle clean :app:assembleDebug` succeeds from a source-only copy of this tree: debug APK **28,187,801 bytes**, SHA-256 `ba4618f3210317194aa3f21d6156489d7ecf68076ff1180622f4db06b1f94ad6`.
+- APK metadata: `com.hive.agents`, versionCode 20, versionName 2.13.0, minSdk 28, targetSdk 35.
 - Not verified on a device or emulator: **no screen has been run**. The station, chat, handoffs, model fallback, crew seeding and loop are compiled, not exercised.
 
 **Known limits**
@@ -154,7 +154,7 @@ The company runs a continuous sales loop, the crew works in parallel on differen
 - Setup copy now describes the loop and the per-role model switch.
 
 **Verified**
-- `gradle clean :app:assembleDebug` succeeds from a fresh public clone at commit `34c34711`: debug APK **28,089,497 bytes**, SHA-256 `5f9b9bde70c2dd5279acb2f414484f20fc9e18716ccd7e8c5f31b4145920`. The APK was downloaded again after upload and the hash matched.
+- `gradle clean :app:assembleDebug` succeeds from a fresh public clone at commit `34c34711`: debug APK **28,089,497 bytes**, SHA-256 `5f9b9bde70c2dd5279acb2f4b41444f20fc9d18716ccd7e8c5f31b4f192451e0`. The APK was downloaded again after upload and the hash matched.
 - Not verified on a device or emulator: **no screen has been run**. The deck, loop, parallel calls, samples and delivery are compiled, not exercised.
 
 **Known limits**
@@ -188,7 +188,7 @@ The company now starts with one lead bot who builds the team, and it runs itself
 - One-time upgrade migration: the old auto-hired trio collapses to the lead, autopilot turns on, and email approval turns off unless the owner changes it.
 
 **Verified**
-- `gradle clean :app:assembleDebug` succeeds from a source-only copy of this tree (no copied build outputs): debug APK **28,007,577 bytes**, SHA-256 `c360d6064e7e7ce41818122ea5ccb938d2f93d726f5a53201b2e7f93dee8d43f`.
+- `gradle clean :app:assembleDebug` succeeds from a source-only copy of this tree (no copied build outputs): debug APK **28,007,577 bytes**, SHA-256 `c360d6064e7e7ce41818122ea5ccb938d2f53d726f5a53201b2e7f93dee8d43f`.
 - Not verified on a device or emulator: **no screen has been run**. Hiring, proofreading, lead tools, autopilot and the browser layout are compiled, not exercised.
 
 **Known limits**
