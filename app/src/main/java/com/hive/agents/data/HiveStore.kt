@@ -45,6 +45,13 @@ class HiveStore internal constructor(private val dir: File) {
     private val _state = MutableStateFlow(load())
     val state: StateFlow<HiveState> = _state.asStateFlow()
 
+    init {
+        // Persist every real model call so a state snapshot carries factual usage data.
+        ModelUsage.install { inputTokens, outputTokens ->
+            update { it.withModelCall(inputTokens = inputTokens, outputTokens = outputTokens) }
+        }
+    }
+
     fun snapshot(): HiveState = _state.value
 
     @Synchronized
@@ -76,6 +83,7 @@ class HiveStore internal constructor(private val dir: File) {
         val inbox = state.inbox.take(MAX_INBOX)
         val sentMail = state.sentMail.takeLast(MAX_SENT_MAIL)
         val suggestions = state.suggestions.takeLast(MAX_SUGGESTIONS)
+        val usage = state.usage.takeLast(MAX_USAGE_HOURS)
 
         // Never drop a planned/running mission: the next shift resumes it.
         val active = state.missions.filter {
@@ -93,6 +101,7 @@ class HiveStore internal constructor(private val dir: File) {
             inbox.size != state.inbox.size ||
             sentMail.size != state.sentMail.size ||
             suggestions.size != state.suggestions.size ||
+            usage.size != state.usage.size ||
             missions.size != state.missions.size
         return if (changed) {
             state.copy(
@@ -102,6 +111,7 @@ class HiveStore internal constructor(private val dir: File) {
                 inbox = inbox,
                 sentMail = sentMail,
                 suggestions = suggestions,
+                usage = usage,
                 missions = missions
             )
         } else {
@@ -146,5 +156,6 @@ class HiveStore internal constructor(private val dir: File) {
         const val MAX_MISSIONS = 200
         const val MAX_SENT_MAIL = 300
         const val MAX_SUGGESTIONS = 100
+        const val MAX_USAGE_HOURS = 168
     }
 }

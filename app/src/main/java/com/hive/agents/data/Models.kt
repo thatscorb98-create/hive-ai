@@ -202,6 +202,19 @@ data class Suggestion(
     }
 }
 
+/**
+ * One hour of real model usage. [calls] counts successful responses from the model endpoint
+ * (retries are separate requests and therefore separate calls). Token fields come from the
+ * provider's `usage` object and stay 0 when the provider does not report them.
+ */
+@Serializable
+data class UsageBucket(
+    val hourStart: Long,
+    val calls: Int = 0,
+    val inputTokens: Long = 0L,
+    val outputTokens: Long = 0L
+)
+
 @Serializable
 data class Settings(
     val businessName: String = "Local Reach Workshop",
@@ -243,6 +256,8 @@ data class HiveState(
     val sentMail: List<SentMail> = emptyList(),
     val inbox: List<InboxMail> = emptyList(),
     val suggestions: List<Suggestion> = emptyList(),
+    /** Real model usage, one bucket per hour, last seven days. Empty until the first call. */
+    val usage: List<UsageBucket> = emptyList(),
     val settings: Settings = Settings()
 ) {
     val orchestrator: Agent? get() = agents.firstOrNull { it.primary } ?: agents.firstOrNull()
@@ -253,6 +268,41 @@ data class HiveState(
     val revenueCents: Long get() = prospects
         .filter { it.stage == ProspectStage.WON && it.paid }
         .sumOf { it.valueCents }
+
+    /** Adds one model call to its hour bucket, keeping a week of history. */
+    fun withModelCall(
+        inputTokens: Int = 0,
+        outputTokens: Int = 0,
+        at: Long = System.currentTimeMillis()
+    ): HiveState {
+        val hour = at - (at % 3_600_000L)
+        val existing = usage.firstOrNull { it.hourStart == hour }
+        val next = if (existing == null) {
+            usage + UsageBucket(
+                hourStart = hour,
+                calls = 1,
+                inputTokens = inputTokens.toLong(),
+                outputTokens = outputTokens.toLong()
+            )
+        } else {
+            usage.map {
+                if (it.hourStart != hour) {
+                    it
+                } else {
+                    it.copy(
+                        calls = it.calls + 1,
+                        inputTokens = it.inputTokens + inputTokens,
+                        outputTokens = it.outputTokens + outputTokens
+                    )
+                }
+            }
+        }
+        return copy(usage = next.sortedBy { it.hourStart }.takeLast(MAX_USAGE_HOURS))
+    }
+
+    private companion object {
+        const val MAX_USAGE_HOURS = 168
+    }
 }
 
 /**
