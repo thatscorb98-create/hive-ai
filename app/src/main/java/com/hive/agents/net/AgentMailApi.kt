@@ -99,3 +99,4 @@ class AgentMailApi(private val vault: KeyVault) {
                 .getOrDefault(System.currentTimeMillis())
         }
     }
+}
