@@ -50,6 +50,8 @@ fun SettingsScreen(
     var github by remember(keys) { mutableStateOf(keys.githubToken) }
     var storageUrl by remember(keys) { mutableStateOf(keys.storageUrl) }
     var storageKey by remember(keys) { mutableStateOf(keys.storageKey) }
+    var googleKey by remember(keys) { mutableStateOf(keys.googleSearchKey) }
+    var googleCx by remember(keys) { mutableStateOf(keys.googleSearchCx) }
     var business by remember(state.settings) { mutableStateOf(state.settings.businessName) }
     var ein by remember(state.settings) { mutableStateOf(state.settings.businessEin) }
     var goal by remember(state.settings) { mutableStateOf(state.settings.goal) }
@@ -86,6 +88,17 @@ fun SettingsScreen(
             LabeledField("Storage URL", storageUrl) { storageUrl = it }
             Spacer(Modifier.height(6.dp))
             LabeledField("Storage key", storageKey, secret = true) { storageKey = it }
+            Spacer(Modifier.height(6.dp))
+            LabeledField("Google API key (optional)", googleKey, secret = true) { googleKey = it }
+            Spacer(Modifier.height(6.dp))
+            LabeledField("Google search engine id, cx (optional)", googleCx) { googleCx = it }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Add both Google fields to research with real Google results. Without them the team " +
+                    "still searches with DuckDuckGo and Bing.",
+                fontSize = 10.sp,
+                color = TextDim
+            )
             Spacer(Modifier.height(8.dp))
             Button(onClick = {
                 onSaveKeys(
@@ -96,7 +109,9 @@ fun SettingsScreen(
                         stripeSecretKey = stripeKey.trim(),
                         githubToken = github.trim(),
                         storageUrl = storageUrl.trim(),
-                        storageKey = storageKey.trim()
+                        storageKey = storageKey.trim(),
+                        googleSearchKey = googleKey.trim(),
+                        googleSearchCx = googleCx.trim()
                     )
                 )
             }) { Text("Save keys") }
