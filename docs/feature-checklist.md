@@ -2,7 +2,7 @@
 
 Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs at `docs.x.ai/grok-bot`.
 
-> **Status meaning (updated for the v2.9.0 source drop):** ✅ = implemented in `app/` and builds,
+> **Status meaning (updated for v2.10.0):** ✅ = implemented in `app/` and builds,
 > 🟡 = partially implemented, ⬜ = not started. Earlier versions of this file described the
 > shipped APK; the statuses below describe the code in this repository.
 
@@ -35,12 +35,12 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 
 | # | Grok Bot behaviour | Hive AI | Status |
 |---|---|---|---|
-| 3.1 | Persistent computer: browser + terminal + files | none on device | ⬜ |
-| 3.2 | Each bot its own screen, parallel work | `Agent.profileId` identity only | 🟡 |
-| 3.3 | Sessions and logins persist | — | ⬜ |
-| 3.4 | Hand over for SSO/passkey/CAPTCHA/2FA | — | ⬜ |
+| 3.1 | Persistent computer: browser + terminal + files | `AgentBrowserActivity` gives each bot a real WebView window | 🟡 |
+| 3.2 | Each bot its own screen, parallel work | one window per bot, opened from Browsers | ✅ |
+| 3.3 | Sessions and logins persist | cookies persist app-wide; window history is per bot | 🟡 |
+| 3.4 | Hand over for SSO/passkey/CAPTCHA/2FA | the human takes the same window, then the bot continues | ✅ |
 | 3.5 | Read one-time codes from the bot's inbox | inbox exists, no agent wiring | 🟡 |
-| 3.6 | Local execution policy | — | ⬜ |
+| 3.6 | Local execution policy | tools are fixed and risk-classed | 🟡 |
 
 ## 4. Connectors
 
@@ -79,7 +79,7 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 |---|---|---|---|
 | 7.1 | Chat is the interface | `ChatScreen` | ✅ |
 | 7.2 | Group chat with several bots | one shared thread, all bots post | ✅ |
-| 7.3 | Bots DM each other, hand off work | `MessageKind.DM` / `HANDOFF` | ✅ |
+| 7.3 | Bots DM each other, hand off work | `MessageKind.DM` / `HANDOFF`, `message_teammate` tool | ✅ |
 | 7.4 | Voice in / voice out | — | ⬜ |
 | 7.5 | Sync across devices | local only | ⬜ |
 | 7.6 | **3D team view** (Hive-specific) | `HiveVizScreen` animated graph | ✅ |
@@ -90,16 +90,16 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 |---|---|---|---|
 | 8.1 | Learn by demonstration | — | ⬜ |
 | 8.2 | Prompt skills, tested before scheduling | missions act as one-shot runs | 🟡 |
-| 8.3 | Scheduled / event routines | `Automation` model only, no worker | ⬜ |
-| 8.4 | Pause a routine | — | ⬜ |
+| 8.3 | Scheduled / event routines | `AutopilotWorker` every 15 min from the standing goal | ✅ |
+| 8.4 | Pause a routine | autopilot switch in Setup | ✅ |
 
 ## 9. Deliverables
 
 | # | Grok Bot behaviour | Hive AI | Status |
 |---|---|---|---|
-| 9.1 | Shared file workspace | deliverables in state | 🟡 |
+| 9.1 | Shared file workspace | deliverables and products in state | 🟡 |
 | 9.2 | Deliverables attached to chat | shown in mission + studio | ✅ |
-| 9.3 | Build sites, graphics, copy, digital goods | model-driven text deliverables | 🟡 |
+| 9.3 | Build sites, graphics, copy, digital goods | `create_product` + model-driven deliverables | 🟡 |
 
 ## 10. Business operations
 
@@ -111,6 +111,8 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 | 10.4 | Pipeline lead → qualify → pitch → close | `SalesScreen` + `Prospect` | ✅ |
 | 10.5 | Business identity (Local Reach Workshop, EIN) on documents | settings fields, not yet on PDFs | 🟡 |
 | 10.6 | Suggestion box that outputs a coding-agent prompt | `SuggestionBox` + copy button | ✅ |
+| 10.7 | Products with a checkout per product | `create_product`, `create_checkout`, Business screen | ✅ |
+| 10.8 | Bots know who they work for | system prompt + seeded shared memory | ✅ |
 
 ## 11. Platform and model
 
@@ -132,7 +134,7 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 ## Build order
 
 1. Keystore recovery — blocks every future in-place update.
-2. In-app browser host per agent profile (3.1-3.4).
-3. Vault export/import (12.3).
-4. Scheduled routines on WorkManager (8.3).
-5. MCP connectors (4.2) and voice (7.4).
+2. Vault export/import (12.3).
+3. Per-bot cookie isolation (3.3) — currently one cookie jar for the app.
+4. MCP connectors (4.2) and voice (7.4).
+5. Runtime verification on a device or emulator; nothing has been run yet.
