@@ -11,6 +11,7 @@ import com.hive.agents.data.Message
 import com.hive.agents.data.MessageKind
 import com.hive.agents.data.Product
 import com.hive.agents.data.Prospect
+import com.hive.agents.data.ProspectStage
 import com.hive.agents.net.AgentMailApi
 import com.hive.agents.net.Http
 import com.hive.agents.net.StripeApi
@@ -46,7 +47,8 @@ class ToolRegistry(
     private val memory: MemoryService,
     private val approvals: ApprovalBroker,
     private val mail: AgentMailApi,
-    private val stripe: StripeApi
+    private val stripe: StripeApi,
+    private val proofreader: Proofreader
 ) {
 
     val specs = listOf(
@@ -172,14 +174,71 @@ class ToolRegistry(
                 {"type":"object","properties":{"product":{"type":"string","description":"Product name"}},"required":["product"]}
             """.trimIndent(),
             risk = ToolRisk.ASK
+        ),
+        ToolSpec(
+            name = "hire_agent",
+            description = "Hire a new bot for the company. Use it to build the marketing, research, sales, product and proofreading teams.",
+            schemaJson = """
+                {"type":"object","properties":{
+                  "name":{"type":"string","description":"Short bot name"},
+                  "role":{"type":"string","description":"e.g. Sales, Research, Marketing, Product, Proofreader"},
+                  "charter":{"type":"string","description":"One sentence on what this bot owns"}
+                },"required":["role"]}
+            """.trimIndent(),
+            risk = ToolRisk.AUTO
+        ),
+        ToolSpec(
+            name = "add_leads",
+            description = "Add several real businesses to the sales pipeline at once. Verify each one first; never invent contacts.",
+            schemaJson = """
+                {"type":"object","properties":{"leads":{"type":"array","items":{"type":"object","properties":{
+                  "company":{"type":"string"},"contact_name":{"type":"string"},"email":{"type":"string"},
+                  "notes":{"type":"string"},"value_cents":{"type":"integer"}
+                },"required":["company"]}}},"required":["leads"]}
+            """.trimIndent(),
+            risk = ToolRisk.AUTO
+        ),
+        ToolSpec(
+            name = "record_sale",
+            description = "Record a closed sale so company progress is measured by sales made.",
+            schemaJson = """
+                {"type":"object","properties":{
+                  "company":{"type":"string"},"email":{"type":"string"},
+                  "amount_cents":{"type":"integer"},"notes":{"type":"string"}
+                },"required":["company","amount_cents"]}
+            """.trimIndent(),
+            risk = ToolRisk.AUTO
+        ),
+        ToolSpec(
+            name = "proofread",
+            description = "Rewrite outbound copy so it sounds human and has no AI filler. Keeps every fact and price.",
+            schemaJson = """
+                {"type":"object","properties":{
+                  "text":{"type":"string"},"what":{"type":"string","description":"e.g. email body, product description"}
+                },"required":["text"]}
+            """.trimIndent(),
+            risk = ToolRisk.AUTO
+        ),
+        ToolSpec(
+            name = "fetch_page",
+            description = "Download a web page and return its readable text, so you can research without opening a browser window.",
+            schemaJson = """
+                {"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}
+            """.trimIndent(),
+            risk = ToolRisk.AUTO
         )
     )
 
     suspend fun call(name: String, argsJson: String, agent: Agent): String {
         val args = runCatching { JSONObject(argsJson.ifBlank { "{}" }) }.getOrElse { JSONObject() }
         val spec = specs.firstOrNull { it.name == name } ?: return "Unknown tool: $name"
+        val settings = store.snapshot().settings
+        val needsApproval = when (name) {
+            "send_email" -> settings.requireApprovalForEmail
+            else -> spec.risk == ToolRisk.ASK
+        }
 
-        if (spec.risk == ToolRisk.ASK) {
+        if (needsApproval) {
             val approved = approvals.request(
                 ApprovalRequest(
                     agentId = agent.id,
@@ -207,24 +266,33 @@ class ToolRegistry(
             }
 
             "send_email" -> {
-                val to = args.optString("to")
+                val to = args.optString("to").trim()
                 val subject = args.optString("subject")
                 val body = args.optString("body")
-                if (!vault.load().hasMail) {
-                    "No AgentMail key configured, so the email was not sent."
-                } else {
-                    runCatching { mail.send(agent.email, agent.email, to, subject, body) }
-                        .fold(
-                            onSuccess = { sent ->
-                                store.update { state ->
-                                    state.copy(
-                                        sentMail = state.sentMail + sent.copy(agentId = agent.id, from = agent.email)
-                                    )
-                                }
-                                "Sent to $to."
-                            },
-                            onFailure = { "Email failed: ${it.message}" }
-                        )
+                when {
+                    to.isBlank() -> "No recipient."
+                    !vault.load().hasMail -> "No AgentMail key configured, so the email was not sent."
+                    else -> {
+                        // Every outbound message is proofread before it leaves the building.
+                        val clean = proofreader.outbound(subject, body)
+                        runCatching { mail.send(agent.email, agent.email, to, clean.first, clean.second) }
+                            .fold(
+                                onSuccess = { sent ->
+                                    store.update { state ->
+                                        state.copy(
+                                            sentMail = state.sentMail + sent.copy(agentId = agent.id, from = agent.email),
+                                            prospects = state.prospects.map {
+                                                if (it.email.equals(to, true) && it.stage != ProspectStage.WON) {
+                                                    it.copy(stage = ProspectStage.PITCHED, updatedAt = System.currentTimeMillis())
+                                                } else it
+                                            }
+                                        )
+                                    }
+                                    "Sent to $to (proofread first)."
+                                },
+                                onFailure = { "Email failed: ${it.message}" }
+                            )
+                    }
                 }
             }
 
@@ -258,11 +326,16 @@ class ToolRegistry(
                     "code" -> DeliverableKind.CODE
                     else -> DeliverableKind.OTHER
                 }
+                val rawBody = args.optString("body")
                 val deliverable = Deliverable(
                     agentId = agent.id,
                     kind = kind,
                     title = args.optString("title", "Untitled"),
-                    body = args.optString("body")
+                    body = if (kind == DeliverableKind.COPY) {
+                        proofreader.copy(rawBody, "sales copy")
+                    } else {
+                        rawBody
+                    }
                 )
                 store.update { state -> state.copy(deliverables = state.deliverables + deliverable) }
                 "Saved deliverable ${deliverable.title}."
@@ -332,8 +405,8 @@ class ToolRegistry(
                     else -> DeliverableKind.OTHER
                 }
                 val product = Product(
-                    name = args.optString("name"),
-                    description = args.optString("description"),
+                    name = args.optString("name").trim(),
+                    description = proofreader.copy(args.optString("description"), "product description"),
                     priceCents = args.optLong("price_cents"),
                     kind = kind,
                     createdBy = agent.id
@@ -370,8 +443,145 @@ class ToolRegistry(
                 }
             }
 
+            "hire_agent" -> {
+                val role = args.optString("role").trim().ifBlank { "Specialist" }
+                val name = args.optString("name").trim().ifBlank { role }
+                val existing = store.snapshot().agents.firstOrNull { it.name.equals(name, true) }
+                if (existing != null) {
+                    "${existing.name} already works here as ${existing.role}."
+                } else {
+                    val newcomer = Agent(
+                        name = name,
+                        role = role,
+                        charter = args.optString("charter").trim(),
+                        hiredBy = agent.id
+                    )
+                    store.update { state ->
+                        state.copy(
+                            agents = state.agents + newcomer,
+                            messages = state.messages + Message(
+                                agentId = agent.id,
+                                kind = MessageKind.SYSTEM,
+                                body = "Hired ${newcomer.name} as ${newcomer.role}."
+                            )
+                        )
+                    }
+                    memory.remember(newcomer.id, MemoryKind.WORKLOG, "Hired as $role by ${agent.name}.", source = "hiring")
+                    memory.remember(agent.id, MemoryKind.WORKLOG, "Hired ${newcomer.name} as $role.", source = "hiring")
+                    "${newcomer.name} joined as $role. Message them with message_teammate."
+                }
+            }
+
+            "add_leads" -> {
+                val arr = args.optJSONArray("leads") ?: return "No leads array."
+                val now = System.currentTimeMillis()
+                val current = store.snapshot().prospects
+                val fresh = mutableListOf<Prospect>()
+                var duplicates = 0
+                for (i in 0 until arr.length()) {
+                    val item = arr.optJSONObject(i) ?: continue
+                    val company = item.optString("company").trim()
+                    if (company.isBlank()) continue
+                    val email = item.optString("email").trim()
+                    val duplicate = (current + fresh).any { known ->
+                        (email.isNotBlank() && known.email.equals(email, true)) ||
+                            known.company.equals(company, true)
+                    }
+                    if (duplicate) {
+                        duplicates++
+                        continue
+                    }
+                    fresh += Prospect(
+                        company = company,
+                        contactName = item.optString("contact_name").trim(),
+                        email = email,
+                        notes = item.optString("notes").trim(),
+                        valueCents = item.optLong("value_cents"),
+                        ownerAgentId = agent.id,
+                        updatedAt = now
+                    )
+                }
+                if (fresh.isEmpty()) return "No new leads. $duplicates were already in the pipeline."
+                store.update { state -> state.copy(prospects = state.prospects + fresh) }
+                "Added ${fresh.size} leads. $duplicates duplicates skipped."
+            }
+
+            "record_sale" -> {
+                val company = args.optString("company").trim()
+                if (company.isBlank()) return "No customer given."
+                val email = args.optString("email").trim()
+                val cents = args.optLong("amount_cents")
+                val notes = args.optString("notes").trim()
+                val now = System.currentTimeMillis()
+                store.update { state ->
+                    val known = state.prospects.firstOrNull {
+                        (email.isNotBlank() && it.email.equals(email, true)) ||
+                            it.company.equals(company, true)
+                    }
+                    val prospects = if (known == null) {
+                        state.prospects + Prospect(
+                            company = company,
+                            email = email,
+                            stage = ProspectStage.WON,
+                            notes = notes,
+                            valueCents = cents,
+                            ownerAgentId = agent.id,
+                            updatedAt = now
+                        )
+                    } else {
+                        state.prospects.map {
+                            if (it.id == known.id) it.copy(
+                                stage = ProspectStage.WON,
+                                valueCents = if (cents > 0) cents else it.valueCents,
+                                email = email.ifBlank { it.email },
+                                notes = notes.ifBlank { it.notes },
+                                updatedAt = now
+                            ) else it
+                        }
+                    }
+                    state.copy(
+                        prospects = prospects,
+                        messages = state.messages + Message(
+                            agentId = agent.id,
+                            kind = MessageKind.SYSTEM,
+                            body = "Sale recorded: $company - $${"%.2f".format(cents / 100.0)}"
+                        )
+                    )
+                }
+                memory.remember(
+                    agent.id,
+                    MemoryKind.FACT,
+                    "Sale: $company, $${"%.2f".format(cents / 100.0)}",
+                    source = "sales"
+                )
+                "Recorded the sale for $company."
+            }
+
+            "proofread" -> proofreader.copy(
+                args.optString("text"),
+                args.optString("what").ifBlank { "outbound copy" }
+            )
+
+            "fetch_page" -> fetchPage(args.optString("url"))
+
             else -> "Unhandled tool: $name"
         }
+    }
+
+    private suspend fun fetchPage(url: String): String {
+        if (url.isBlank()) return "No URL given."
+        val target = if (url.startsWith("http://") || url.startsWith("https://")) url else "https://$url"
+        val raw = runCatching { Http.get(target) }.getOrElse { return "Fetch failed: ${it.message}" }
+        val text = raw
+            .replace(Regex("(?is)<(script|style)[^>]*>.*?</\\1>"), " ")
+            .replace(Regex("(?s)<[^>]+>"), " ")
+            .replace("&nbsp;", " ")
+            .replace("&amp;", "&")
+            .replace("&quot;", "\"")
+            .replace("&#39;", "'")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        return text.take(6000).ifBlank { "No readable text on that page." }
     }
 
     private suspend fun search(query: String): String {

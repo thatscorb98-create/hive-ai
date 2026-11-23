@@ -11,7 +11,7 @@ import com.hive.agents.data.MissionStatus
  * Keeps the business moving while the app is in the background.
  *
  * Every 15 minutes it picks up the oldest unfinished mission, or starts a new one from the
- * standing goal, and lets the orchestrator run it. It refuses to do anything without a model key,
+ * standing goal, and lets the company lead run it. It refuses to do anything without a model key,
  * and it never bypasses approvals: write actions still stop and wait for the human.
  */
 class AutopilotWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
@@ -24,6 +24,7 @@ class AutopilotWorker(context: Context, params: WorkerParameters) : CoroutineWor
         if (!store.snapshot().settings.autopilot) return Result.success()
 
         val state = store.snapshot()
+        store.update { it.copy(settings = it.settings.copy(lastShiftAt = System.currentTimeMillis())) }
         val next = state.missions
             .filter { it.status == MissionStatus.PLANNED || it.status == MissionStatus.RUNNING }
             .minByOrNull { it.createdAt }

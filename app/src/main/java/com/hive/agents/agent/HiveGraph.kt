@@ -32,8 +32,9 @@ object HiveGraph {
         val mail = AgentMailApi(vault)
         val stripe = StripeApi(vault)
         val nim = NimClient(vault)
+        val proofreader = Proofreader(nim, store)
         val suggestions = SuggestionBox(store)
-        val tools = ToolRegistry(store, vault, memory, approvals, mail, stripe)
+        val tools = ToolRegistry(store, vault, memory, approvals, mail, stripe, proofreader)
         val engine = TeamEngine(store, nim, tools, memory, suggestions)
     }
 }
