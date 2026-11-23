@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hive.agents.browser.AgentBrowserActivity
+import com.hive.agents.browser.BrowserHub
 import com.hive.agents.data.Models
 import com.hive.agents.ui.screens.BrowsersScreen
 import com.hive.agents.ui.screens.ChatScreen
@@ -78,16 +79,18 @@ fun HiveApp(vm: HiveViewModel) {
     var openMission by remember { mutableStateOf<String?>(null) }
 
     // The agent asked for its browser: hand the real window to the human.
+    // Clear the request before launching and never relaunch a window that is already open for
+    // this bot, otherwise a stale request reopens the activity in a loop.
     LaunchedEffect(pendingBrowser) {
-        pendingBrowser?.let { request ->
-            val intent = Intent(context, AgentBrowserActivity::class.java).apply {
-                putExtra(AgentBrowserActivity.EXTRA_AGENT_ID, request.agentId)
-                putExtra(AgentBrowserActivity.EXTRA_AGENT_NAME, request.agentName)
-                putExtra(AgentBrowserActivity.EXTRA_URL, request.url)
-            }
-            runCatching { context.startActivity(intent) }
-            vm.clearBrowserRequest()
+        val request = pendingBrowser ?: return@LaunchedEffect
+        vm.clearBrowserRequest()
+        if (BrowserHub.isOpen && BrowserHub.currentAgent.value == request.agentId) return@LaunchedEffect
+        val intent = Intent(context, AgentBrowserActivity::class.java).apply {
+            putExtra(AgentBrowserActivity.EXTRA_AGENT_ID, request.agentId)
+            putExtra(AgentBrowserActivity.EXTRA_AGENT_NAME, request.agentName)
+            putExtra(AgentBrowserActivity.EXTRA_URL, request.url)
         }
+        runCatching { context.startActivity(intent) }
     }
 
     Scaffold(
@@ -170,6 +173,7 @@ fun HiveApp(vm: HiveViewModel) {
                         onOpenStudio = { screen = HiveScreen.STUDIO },
                         onOpenBrowsers = { screen = HiveScreen.BROWSERS },
                         onOpenInbox = { screen = HiveScreen.INBOX },
+                        onOpenMissions = { screen = HiveScreen.MISSIONS },
                         onOpenMission = { id -> openMission = id; screen = HiveScreen.MISSION }
                     )
 

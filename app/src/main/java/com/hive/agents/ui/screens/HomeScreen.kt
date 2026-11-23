@@ -56,6 +56,7 @@ fun HomeScreen(
     onOpenStudio: () -> Unit,
     onOpenBrowsers: () -> Unit,
     onOpenInbox: () -> Unit,
+    onOpenMissions: () -> Unit,
     onOpenMission: (String) -> Unit
 ) {
     var command by remember { mutableStateOf("") }
@@ -104,7 +105,7 @@ fun HomeScreen(
                     color = Good
                 )
                 Text(
-                    "Pipeline $ $${"%.2f".format(pipelineCents / 100.0)} across ${state.prospects.size} leads",
+                    "Pipeline ${"%.2f".format(pipelineCents / 100.0)} across ${state.prospects.size} leads",
                     fontSize = 11.sp,
                     color = TextDim
                 )
@@ -190,6 +191,7 @@ fun HomeScreen(
                 TextButton(onClick = onOpenBrowsers) { Text("Browsers", fontSize = 12.sp) }
                 TextButton(onClick = onOpenInbox) { Text("Email", fontSize = 12.sp) }
                 TextButton(onClick = onOpenStudio) { Text("Products", fontSize = 12.sp) }
+                TextButton(onClick = onOpenMissions) { Text("Missions", fontSize = 12.sp) }
             }
         }
 
