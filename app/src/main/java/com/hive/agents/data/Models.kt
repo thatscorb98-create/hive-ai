@@ -218,7 +218,7 @@ data class Settings(
     /** The company runs a shift when the app opens and every 15 minutes after that. */
     val autopilotDefaulted: Boolean = false,
     /** One-time upgrade of the old auto-hired trio into a single lead who builds the team. */
-    val teamCleaned: Boolean = true,
+    val teamCleaned: Boolean = false,
     val proofreadOutbound: Boolean = true,
     /** Lead on the strong model, specialists on Lightning, proofreader on DeepSeek. */
     val routeModels: Boolean = true,
