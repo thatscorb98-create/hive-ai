@@ -1,7 +1,5 @@
 package com.hive.agents.ui.screens
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,11 +9,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -28,29 +25,34 @@ import com.hive.agents.ui.theme.Teal
 import com.hive.agents.ui.theme.TextDim
 
 /**
- * Browser profiles. Each bot gets its own profile id so sessions do not bleed between roles.
- * The in-app browser host that drives these lands with checklist item 3.x; until then this
- * screen shows the profile and opens a URL in the device browser.
+ * Each bot has its own browser window with its own address bar and history. Open a bot's
+ * browser, sign in to whatever it needs, then let the bot drive that same window with its
+ * browser tools (open, read, click, type).
  */
 @Composable
-fun BrowsersScreen(state: HiveState, onBack: () -> Unit) {
-    val context = LocalContext.current
-
+fun BrowsersScreen(state: HiveState, onOpen: (String) -> Unit, onBack: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        item { BackRow("Missions", onBack) }
+        item { BackRow("Home", onBack) }
 
         item {
             Text("Browsers", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text(
-                "One profile per bot, so cookies and logins stay with the role.",
+                "One window per bot. Log in yourself when a site asks, and the bot keeps that session.",
                 fontSize = 11.sp,
+                color = TextDim
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Android shares one cookie jar across WebViews, so treat a login as available to the team. " +
+                    "Do not sign a bot into anything you would not trust the others with.",
+                fontSize = 10.sp,
                 color = TextDim
             )
             Spacer(Modifier.height(8.dp))
         }
 
         if (state.agents.isEmpty()) {
-            item { EmptyState("No bots, no browsers.") }
+            item { EmptyState("No bots yet.") }
         }
 
         items(state.agents) { agent ->
@@ -58,18 +60,14 @@ fun BrowsersScreen(state: HiveState, onBack: () -> Unit) {
                 Row(Modifier.fillMaxWidth()) {
                     Column(Modifier.weight(1f)) {
                         Text(agent.name, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                        Text("profile ${agent.profileId.take(8)}", fontSize = 10.sp, color = TextDim)
+                        Text("${agent.role} - profile ${agent.profileId.take(8)}", fontSize = 10.sp, color = TextDim)
                     }
                     Pill(if (agent.active) "ready" else "idle", Teal)
                 }
-                Spacer(Modifier.height(6.dp))
-                TextButton(onClick = {
-                    val intent = Intent(
-                        Intent.ACTION_VIEW,
-                        Uri.parse("https://html.duckduckgo.com/html/?q=${agent.role}")
-                    )
-                    runCatching { context.startActivity(intent) }
-                }) { Text("Open a page", fontSize = 11.sp) }
+                Spacer(Modifier.height(8.dp))
+                Row {
+                    Button(onClick = { onOpen(agent.id) }) { Text("Open browser", fontSize = 12.sp) }
+                }
             }
         }
     }

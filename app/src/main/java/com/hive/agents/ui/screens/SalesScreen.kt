@@ -40,24 +40,71 @@ fun SalesScreen(
     onAddProspect: (String, String, String) -> Unit,
     onMove: (String, ProspectStage) -> Unit,
     onPay: (String) -> Unit,
-    onAddService: (String, String) -> Unit
+    onAddService: (String, String) -> Unit,
+    onAddProduct: (String, String, String) -> Unit,
+    onCheckout: (String) -> Unit
 ) {
     var company by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var value by remember { mutableStateOf("") }
     var serviceName by remember { mutableStateOf("") }
     var servicePrice by remember { mutableStateOf("") }
+    var productName by remember { mutableStateOf("") }
+    var productPrice by remember { mutableStateOf("") }
+    var productPitch by remember { mutableStateOf("") }
+
+    val wonCents = state.prospects.filter { it.stage == ProspectStage.WON }.sumOf { it.valueCents }
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         item {
             Column(Modifier.padding(vertical = 8.dp)) {
-                Text("Sales", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text("Business", fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    "Stripe links are created only when a buyer is ready to pay.",
+                    "${state.settings.businessName} - collected $${"%.2f".format(wonCents / 100.0)}",
                     fontSize = 11.sp,
                     color = TextDim
                 )
             }
+        }
+
+        item { SectionHeader("DIGITAL PRODUCTS", "what the bots sell, with a Stripe checkout when a buyer is ready") }
+
+        if (state.products.isEmpty()) {
+            item { EmptyState("No products yet. A bot can create one with the create_product tool.") }
+        }
+
+        items(state.products) { product ->
+            HiveCard(accent = Good) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(product.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Pill(product.status, if (product.status == "on sale") Good else Amber)
+                }
+                if (product.description.isNotBlank()) {
+                    Text(product.description, fontSize = 11.sp, color = TextDim)
+                }
+                Text("$${"%.2f".format(product.priceCents / 100.0)}", fontSize = 13.sp, color = Good)
+                if (product.checkoutUrl.isNotBlank()) {
+                    Text(product.checkoutUrl, fontSize = 10.sp, color = TextDim)
+                }
+                Spacer(Modifier.height(6.dp))
+                TextButton(onClick = { onCheckout(product.id) }) {
+                    Text("Create checkout link", fontSize = 11.sp, color = Amber)
+                }
+            }
+        }
+
+        item {
+            SectionHeader("ADD PRODUCT", "a digital good or an AI-run service")
+            LabeledField("Name", productName) { productName = it }
+            Spacer(Modifier.height(6.dp))
+            LabeledField("What the buyer gets", productPitch) { productPitch = it }
+            Spacer(Modifier.height(6.dp))
+            LabeledField("Price (USD)", productPrice) { productPrice = it }
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = {
+                onAddProduct(productName, productPitch, productPrice)
+                productName = ""; productPitch = ""; productPrice = ""
+            }) { Text("Add product") }
         }
 
         item { SectionHeader("PIPELINE", "${state.prospects.size} leads") }
@@ -76,7 +123,7 @@ fun SalesScreen(
                     Text(prospect.email, fontSize = 11.sp, color = TextDim)
                 }
                 Text(
-                    if (prospect.valueCents > 0) "$${prospect.valueCents / 100.0}" else "no value set",
+                    if (prospect.valueCents > 0) "$${"%.2f".format(prospect.valueCents / 100.0)}" else "no value set",
                     fontSize = 12.sp,
                     color = TextDim
                 )
@@ -107,14 +154,14 @@ fun SalesScreen(
         }
 
         item {
-            SectionHeader("SERVICES", "what the business sells")
+            SectionHeader("SERVICES", "what else the business sells")
             if (state.services.isEmpty()) {
                 EmptyState("No services listed.")
             }
             state.services.forEach { service ->
                 HiveCard {
                     Text(service.name, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                    Text("$${service.priceCents / 100.0}", fontSize = 11.sp, color = Good)
+                    Text("$${"%.2f".format(service.priceCents / 100.0)}", fontSize = 11.sp, color = Good)
                 }
             }
             Spacer(Modifier.height(6.dp))
@@ -133,7 +180,6 @@ fun SalesScreen(
 private fun stageColor(prospect: Prospect) = when (prospect.stage) {
     ProspectStage.WON -> Good
     ProspectStage.LOST -> TextDim
-    ProspectStage.NEGOTIATING -> Amber
     else -> Amber
 }
 
