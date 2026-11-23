@@ -89,18 +89,24 @@ class TeamEngine(
 
         val model = ModelRouter.forAgent(agent, store.snapshot().settings)
         var last = ""
-        repeat(6) {
+        repeat(8) {
             val reply = nim.chat(messages, tools.specs, model = model)
             if (reply.content.isNotBlank()) last = reply.content
             if (reply.calls.isEmpty()) return last.ifBlank { "..." }
 
-            messages += NimClient.Msg("assistant", reply.content.ifBlank { "Calling tools." })
+            // Echo the assistant's real tool calls, then answer each one with a tool result.
+            // Sending "Calling tools." and a user message instead made models repeat calls.
+            messages += NimClient.Msg("assistant", reply.content, toolCalls = reply.calls)
             for (call in reply.calls) {
-                val result = tools.call(call.name, call.args, agent)
-                messages += NimClient.Msg("user", "Result of ${call.name}: $result")
+                val result = tools.call(call.name, call.args, agent).ifBlank { "No output." }
+                messages += NimClient.Msg("tool", result, toolCallId = call.id)
             }
         }
-        return last.ifBlank { "Stopped after six tool rounds." }
+        return wrapUp(
+            model,
+            messages,
+            last.ifBlank { "I stopped after eight tool rounds without a final reply." }
+        )
     }
 
     suspend fun runMission(missionId: String) {
@@ -212,10 +218,23 @@ class TeamEngine(
         val model = lead?.let { ModelRouter.forAgent(it, store.snapshot().settings) }
             ?: store.snapshot().settings.model
         val reply = try {
-            nim.chat(listOf(NimClient.Msg("system", prompt)), model = model, maxTokens = 500)
+            // Reasoning tokens count against max_tokens. 500 was routinely spent on hidden
+            // reasoning, producing HTTP 200 with empty content and a silent fallback task.
+            nim.chat(
+                listOf(NimClient.Msg("system", prompt)),
+                model = model,
+                maxTokens = 3000,
+                temperature = 0.2
+            )
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
+            say(
+                lead,
+                "Planning error: ${error.message?.take(160) ?: "unknown error"}. Using one fallback task for this shift.",
+                mission.id,
+                kind = MessageKind.SYSTEM
+            )
             return listOf(fallbackTask(mission, team))
         }
         val parsed = parseTasks(reply.content, team).map { it.copy(missionId = mission.id) }
@@ -322,18 +341,41 @@ class TeamEngine(
         )
 
         var last = ""
-        repeat(5) {
+        repeat(8) {
             val reply = nim.chat(messages, tools.specs, model = model)
             if (reply.content.isNotBlank()) last = reply.content
             if (reply.calls.isEmpty()) return last.ifBlank { "Done." }
 
-            messages += NimClient.Msg("assistant", reply.content.ifBlank { "Calling tools." })
+            messages += NimClient.Msg("assistant", reply.content, toolCalls = reply.calls)
             for (call in reply.calls) {
-                val result = tools.call(call.name, call.args, agent)
-                messages += NimClient.Msg("user", "Result of ${call.name}: $result")
+                val result = tools.call(call.name, call.args, agent).ifBlank { "No output." }
+                messages += NimClient.Msg("tool", result, toolCallId = call.id)
             }
         }
-        return last.ifBlank { "Stopped after five tool rounds." }
+        return wrapUp(model, messages, last.ifBlank { "Stopped after eight tool rounds." })
+    }
+
+    /**
+     * Tool budget exhausted: ask for prose without tools so the owner gets a real report
+     * instead of a dead-end "Stopped after N tool rounds" bubble.
+     */
+    private suspend fun wrapUp(
+        model: String,
+        messages: List<NimClient.Msg>,
+        fallback: String
+    ): String {
+        val closing = messages + NimClient.Msg(
+            "user",
+            "Tool budget reached. Do not call any more tools. Reply to the owner in one short paragraph: what you completed, what is blocked, and the next concrete step."
+        )
+        val reply = try {
+            nim.chat(closing, tools = emptyList(), model = model, maxTokens = 1600)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            return fallback
+        }
+        return reply.content.ifBlank { fallback }
     }
 
     private fun systemPrompt(agent: Agent): String {
