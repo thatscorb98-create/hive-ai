@@ -7,6 +7,7 @@ import okhttp3.FormBody
 import okhttp3.Request
 import org.json.JSONObject
 import java.util.Locale
+import java.util.UUID
 
 /**
  * Stripe, used one way only: a payment link is created at the moment a buyer is ready to pay.
@@ -19,7 +20,8 @@ class StripeApi(private val vault: KeyVault) {
         amountCents: Long,
         currency: String,
         description: String,
-        customerEmail: String = ""
+        customerEmail: String = "",
+        requestId: String = UUID.randomUUID().toString()
     ): String {
         val key = vault.load().stripeSecretKey
         require(key.isNotBlank()) { "No Stripe key. Add one in Settings." }
@@ -28,6 +30,7 @@ class StripeApi(private val vault: KeyVault) {
         val price = post(
             path = "/v1/prices",
             key = key,
+            requestId = "$requestId-price",
             form = FormBody.Builder()
                 .add("currency", currency.lowercase(Locale.US))
                 .add("unit_amount", amountCents.toString())
@@ -40,6 +43,7 @@ class StripeApi(private val vault: KeyVault) {
         val link = post(
             path = "/v1/payment_links",
             key = key,
+            requestId = "$requestId-link",
             form = FormBody.Builder()
                 .add("line_items[0][price]", priceId)
                 .add("line_items[0][quantity]", "1")
@@ -51,11 +55,16 @@ class StripeApi(private val vault: KeyVault) {
         return url
     }
 
-    private suspend fun post(path: String, key: String, form: FormBody): String =
-        withContext(Dispatchers.IO) {
+    private suspend fun post(
+        path: String,
+        key: String,
+        requestId: String,
+        form: FormBody
+    ): String = withContext(Dispatchers.IO) {
             val request = Request.Builder()
                 .url("https://api.stripe.com$path")
                 .header("Authorization", "Bearer $key")
+                .header("Idempotency-Key", requestId)
                 .post(form)
                 .build()
             Http.client.newCall(request).execute().use { response ->
