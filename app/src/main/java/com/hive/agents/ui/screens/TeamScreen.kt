@@ -31,6 +31,7 @@ import com.hive.agents.ui.LabeledField
 import com.hive.agents.ui.Pill
 import com.hive.agents.ui.SectionHeader
 import com.hive.agents.ui.theme.Amber
+import com.hive.agents.ui.theme.Danger
 import com.hive.agents.ui.theme.Teal
 import com.hive.agents.ui.theme.TextDim
 
@@ -38,6 +39,7 @@ import com.hive.agents.ui.theme.TextDim
 fun TeamScreen(
     state: HiveState,
     onHire: (String, String, String) -> Unit,
+    onDelete: (String) -> Unit,
     onDm: (String, String, String) -> Unit,
     onOpenViz: () -> Unit
 ) {
@@ -48,6 +50,7 @@ fun TeamScreen(
     var dmFrom by remember { mutableStateOf<Agent?>(null) }
     var dmTo by remember { mutableStateOf<Agent?>(null) }
     var dmText by remember { mutableStateOf("") }
+    var pendingDelete by remember { mutableStateOf<Agent?>(null) }
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         item {
@@ -79,12 +82,15 @@ fun TeamScreen(
                     TextButton(onClick = { dmFrom = agent; dmTo = state.agents.firstOrNull { it.id != agent.id } }) {
                         Text("Message another bot", fontSize = 11.sp)
                     }
+                    TextButton(onClick = { pendingDelete = agent }) {
+                        Text("Delete", fontSize = 11.sp, color = Danger)
+                    }
                 }
             }
         }
 
         item {
-            SectionHeader("HIRE A SPECIALIST", "The orchestrator can do this itself, or you can name the role.")
+            SectionHeader("HIRE A SPECIALIST", "Your lead bot builds the team itself, or you can name the role here.")
             LabeledField("Role", role) { role = it }
             Spacer(Modifier.height(6.dp))
             LabeledField("Bot name", name) { name = it }
@@ -96,6 +102,27 @@ fun TeamScreen(
                 role = ""; name = ""; charter = ""
             }) { Text("Hire") }
         }
+    }
+
+    if (pendingDelete != null) {
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("Delete ${pendingDelete?.name}?", fontSize = 16.sp) },
+            text = {
+                Text(
+                    "This removes the bot and its memory. Its past messages stay in the chat. " +
+                        "If you delete the last bot, a fresh lead starts so the company keeps running.",
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDelete?.let { onDelete(it.id) }
+                    pendingDelete = null
+                }) { Text("Delete", color = Danger) }
+            },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Cancel") } }
+        )
     }
 
     if (dmFrom != null) {

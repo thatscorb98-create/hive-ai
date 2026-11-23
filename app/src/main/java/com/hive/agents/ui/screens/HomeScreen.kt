@@ -33,7 +33,6 @@ import androidx.compose.ui.unit.sp
 import com.hive.agents.data.HiveState
 import com.hive.agents.data.MessageKind
 import com.hive.agents.data.ProspectStage
-import com.hive.agents.data.TaskStatus
 import com.hive.agents.ui.HiveCard
 import com.hive.agents.ui.Pill
 import com.hive.agents.ui.SectionHeader
@@ -61,13 +60,11 @@ fun HomeScreen(
 ) {
     var command by remember { mutableStateOf("") }
 
-    val won = state.prospects.filter { it.stage == ProspectStage.WON }
-    val revenueCents = won.sumOf { it.valueCents }
+    val sales = state.salesMade
+    val revenueCents = state.revenueCents
     val pipelineCents = state.prospects
         .filter { it.stage != ProspectStage.WON && it.stage != ProspectStage.LOST }
         .sumOf { it.valueCents }
-    val doneTasks = state.tasks.count { it.status == TaskStatus.DONE }
-    val automation = if (state.tasks.isEmpty()) 0 else doneTasks * 100 / state.tasks.size
     val activity = state.messages.sortedByDescending { it.createdAt }.take(6)
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
@@ -97,18 +94,28 @@ fun HomeScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.height(4.dp))
-                Text("Today's booked revenue", fontSize = 11.sp, color = TextDim)
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text("$sales", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Good)
+                    Text(
+                        "  sales made",
+                        fontSize = 13.sp,
+                        color = TextDim,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                }
                 Text(
-                    "$${"%.2f".format(revenueCents / 100.0)}",
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Good
-                )
-                Text(
-                    "Pipeline ${"%.2f".format(pipelineCents / 100.0)} across ${state.prospects.size} leads",
+                    "$${"%.2f".format(revenueCents / 100.0)} collected - pipeline " +
+                        "$${"%.2f".format(pipelineCents / 100.0)} across ${state.prospects.size} leads",
                     fontSize = 11.sp,
                     color = TextDim
                 )
+                if (autopilot) {
+                    Text(
+                        "Shifts start when you open the app, then every 15 minutes.",
+                        fontSize = 10.sp,
+                        color = TextDim
+                    )
+                }
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onRunShift) {
@@ -124,7 +131,7 @@ fun HomeScreen(
                 Modifier.fillMaxWidth().padding(vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                MetricTile("Automation", "$automation%", Good, Modifier.weight(1f))
+                MetricTile("Sales", "$sales", Good, Modifier.weight(1f))
                 MetricTile("Bots", "${state.agents.size}", Teal, Modifier.weight(1f))
                 MetricTile("Products", "${state.products.size}", Amber, Modifier.weight(1f))
             }
