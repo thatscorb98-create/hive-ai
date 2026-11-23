@@ -306,7 +306,15 @@ class ToolRegistry(
                 }
             }
 
-            "open_website" -> BrowserHub.open(agent.id, args.optString("url"))
+            "open_website" -> {
+                val url = args.optString("url")
+                if (BrowserHub.ownsWindow(agent.id)) {
+                    BrowserHub.open(agent.id, url)
+                } else {
+                    BrowserHub.requestOpen(agent.id, agent.name, url)
+                    "Your browser is not the open window, so I asked the human to open it at $url."
+                }
+            }
 
             "read_page" -> BrowserHub.readPage(agent.id)
 
