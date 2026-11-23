@@ -238,7 +238,11 @@ data class Settings(
     /** Lead on the strong model, specialists on Lightning, proofreader on DeepSeek. */
     val routeModels: Boolean = true,
     val lastShiftAt: Long = 0L,
-    val buyingGuide: String = "Digital goods, AI-run services, websites, graphics, copy and automation for local businesses."
+    val buyingGuide: String = "Digital goods, AI-run services, websites, graphics, copy and automation for local businesses.",
+    /** Optional live-sync relay (the Hive Station dashboard). Blank means off. */
+    val syncUrl: String = "",
+    /** Room key for the relay. Stripped from the snapshot before it is uploaded. */
+    val syncKey: String = ""
 )
 
 @Serializable

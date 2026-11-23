@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import com.hive.agents.net.LiveSync
 import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -50,6 +51,8 @@ class HiveStore internal constructor(private val dir: File) {
         ModelUsage.install { inputTokens, outputTokens ->
             update { it.withModelCall(inputTokens = inputTokens, outputTokens = outputTokens) }
         }
+        // Optional push to the Hive Station relay; does nothing until a URL and key are saved.
+        LiveSync.start(this)
     }
 
     fun snapshot(): HiveState = _state.value

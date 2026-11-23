@@ -37,6 +37,20 @@ object Http {
         }
     }
 
+    suspend fun putJson(
+        url: String,
+        body: String,
+        headers: Map<String, String> = emptyMap()
+    ): String = withContext(Dispatchers.IO) {
+        val builder = Request.Builder().url(url).put(body.toRequestBody(JSON_MEDIA))
+        headers.forEach { (k, v) -> builder.header(k, v) }
+        client.newCall(builder.build()).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            if (!response.isSuccessful) throw HttpException(response.code, text)
+            text
+        }
+    }
+
     suspend fun get(
         url: String,
         headers: Map<String, String> = emptyMap()

@@ -14,6 +14,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,6 +57,9 @@ fun SettingsScreen(
     var ein by remember(state.settings) { mutableStateOf(state.settings.businessEin) }
     var goal by remember(state.settings) { mutableStateOf(state.settings.goal) }
     var blocklist by remember(state.settings) { mutableStateOf(state.settings.emailBlocklist) }
+    var syncUrl by remember(state.settings) { mutableStateOf(state.settings.syncUrl) }
+    var syncKey by remember(state.settings) { mutableStateOf(state.settings.syncKey) }
+    val liveSyncStatus by com.hive.agents.net.LiveSync.status.collectAsState()
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         item {
@@ -123,6 +127,35 @@ fun SettingsScreen(
                 fontSize = 10.sp,
                 color = TextDim
             )
+        }
+
+        item {
+            SectionHeader("LIVE SYNC", "optional - pushes a snapshot to your dashboard")
+            LabeledField("Sync URL", syncUrl) { syncUrl = it }
+            Spacer(Modifier.height(6.dp))
+            LabeledField("Sync key", syncKey, secret = true) { syncKey = it }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Paste the URL and key from the dashboard's Settings -> Live sync card. Every change " +
+                    "is pushed about two seconds after it settles, and the dashboard refreshes every " +
+                    "four seconds. The key stays on this device; it is removed from the uploaded snapshot.",
+                fontSize = 10.sp,
+                color = TextDim
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = {
+                onSaveSettings(
+                    state.settings.copy(syncUrl = syncUrl.trim(), syncKey = syncKey.trim())
+                )
+            }) { Text("Save live sync") }
+            if (syncKey.isNotBlank() && syncKey.trim().length < 16) {
+                Spacer(Modifier.height(4.dp))
+                Text("The key must be at least 16 characters.", fontSize = 10.sp, color = Amber)
+            }
+            if (liveSyncStatus.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(liveSyncStatus, fontSize = 10.sp, color = TextDim)
+            }
         }
 
         item {
