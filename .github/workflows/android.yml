@@ -1,0 +1,67 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install platform 35
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" > /dev/null
+
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Stage APK
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/debug/app-debug.apk out/hive-2.14.0-debug.apk
+          sha256sum out/hive-2.14.0-debug.apk > out/hive-2.14.0-debug.apk.sha256
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v2.14.0
+          name: Hive 2.14.0 - real model usage
+          body: |
+            Counts real model calls and token usage per hour, so hive-state.json carries a
+            `usage[]` array the Hive Station dashboard can graph next to messages.
+
+            - `calls` counts successful chat-completions requests. Retries are separate
+              requests and count separately.
+            - `inputTokens` / `outputTokens` come from the provider's `usage` object and stay 0
+              when it does not report them.
+            - Kept as 168 hourly buckets (about seven days); capped on every write.
+
+            Debug-signed, so it may not install over an older build with a different signing
+            key (uninstall the old app first). Not tested on a device in CI; the build task and
+            unit-test-free assemble are the checks.
+          files: |
+            out/hive-2.14.0-debug.apk
+            out/hive-2.14.0-debug.apk.sha256
+          overwrite_files: true
+          make_latest: true
