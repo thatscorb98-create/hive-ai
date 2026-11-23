@@ -41,6 +41,7 @@ fun SettingsScreen(
     keys: VaultKeys,
     onSaveKeys: (VaultKeys) -> Unit,
     onSaveSettings: (com.hive.agents.data.Settings) -> Unit,
+    onAutopilot: (Boolean) -> Unit,
     onForget: (String) -> Unit,
     onBack: () -> Unit
 ) {
@@ -51,6 +52,7 @@ fun SettingsScreen(
     var github by remember(keys) { mutableStateOf(keys.githubToken) }
     var business by remember(state.settings) { mutableStateOf(state.settings.businessName) }
     var ein by remember(state.settings) { mutableStateOf(state.settings.businessEin) }
+    var goal by remember(state.settings) { mutableStateOf(state.settings.goal) }
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         item { BackRow("Missions", onBack) }
@@ -109,14 +111,37 @@ fun SettingsScreen(
         }
 
         item {
-            SectionHeader("BUSINESS", "appears on invoices and outreach")
+            SectionHeader("BUSINESS", "every bot is told who it works for")
             LabeledField("Business name", business) { business = it }
             Spacer(Modifier.height(6.dp))
             LabeledField("EIN", ein) { ein = it }
+            Spacer(Modifier.height(6.dp))
+            LabeledField("Standing goal", goal, singleLine = false) { goal = it }
             Spacer(Modifier.height(8.dp))
             Button(onClick = {
-                onSaveSettings(state.settings.copy(businessName = business, businessEin = ein))
+                onSaveSettings(
+                    state.settings.copy(businessName = business, businessEin = ein, goal = goal)
+                )
             }) { Text("Save business") }
+        }
+
+        item {
+            SectionHeader("AUTOPILOT", "background shifts every 15 minutes while the phone has network")
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                Text(
+                    if (state.settings.autopilot) "Running shifts automatically" else "Off - only manual shifts",
+                    fontSize = 12.sp,
+                    color = TextDim
+                )
+                androidx.compose.material3.Switch(
+                    checked = state.settings.autopilot,
+                    onCheckedChange = { onAutopilot(it) }
+                )
+            }
         }
 
         item {
