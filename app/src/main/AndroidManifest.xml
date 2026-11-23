@@ -14,6 +14,12 @@
         android:usesCleartextTraffic="false">
 
         <activity
+            android:name=".browser.AgentBrowserActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustResize">
