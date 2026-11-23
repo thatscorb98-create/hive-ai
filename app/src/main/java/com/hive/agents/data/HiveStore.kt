@@ -6,7 +6,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import com.hive.agents.net.LiveSync
 import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -14,13 +13,9 @@ import java.util.concurrent.TimeUnit
 /**
  * Single source of truth for the app.
  *
- * Writes happen on one background thread. The previous version encoded and wrote the whole
- * pretty-printed state inside every `update`, and Compose event handlers call `update` on the
- * main thread; as the state grew that became an ANR risk. The in-memory state still changes
- * immediately, so the UI is not waiting on disk.
- *
- * The file is written atomically (temp file + rename) and mirrored to `hive-state.bak`, so a
- * crash mid-write cannot leave a half-written state file behind.
+ * Writes happen on one background thread. The in-memory state changes immediately, so the UI is
+ * not waiting on disk. The file is written atomically (temp file + rename) and mirrored to
+ * `hive-state.bak`, so a crash mid-write cannot leave a half-written state file behind.
  */
 class HiveStore internal constructor(private val dir: File) {
 
@@ -51,8 +46,6 @@ class HiveStore internal constructor(private val dir: File) {
         ModelUsage.install { inputTokens, outputTokens ->
             update { it.withModelCall(inputTokens = inputTokens, outputTokens = outputTokens) }
         }
-        // Optional push to the Hive Station relay; does nothing until a URL and key are saved.
-        LiveSync.start(this)
     }
 
     fun snapshot(): HiveState = _state.value
