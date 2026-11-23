@@ -1,6 +1,8 @@
 package com.hive.agents.agent
 
 import com.hive.agents.net.Http
+import org.json.JSONArray
+import org.json.JSONObject
 
 /** Web research tools, kept out of the registry so each file stays reviewable. */
 object ToolWeb {
@@ -21,7 +23,12 @@ object ToolWeb {
         return text.take(6000).ifBlank { "No readable text on that page." }
     }
 
-    suspend fun search(query: String): String {
+    /**
+     * Google first when the owner has added a Programmable Search key, then DuckDuckGo and Bing
+     * RSS. Google has no free scraping endpoint: it needs a Custom Search JSON API key and a
+     * search engine id, which is why this is an optional pair of vault keys.
+     */
+    suspend fun search(query: String, googleKey: String = "", googleCx: String = ""): String {
         if (query.isBlank()) return "Empty query."
         val encoded = java.net.URLEncoder.encode(query, "UTF-8")
         val ua = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 " +
@@ -30,6 +37,11 @@ object ToolWeb {
             "User-Agent" to ua,
             "Accept-Language" to "en-US,en;q=0.9"
         )
+
+        if (googleKey.isNotBlank() && googleCx.isNotBlank()) {
+            val googleHits = google(encoded, googleKey, googleCx)
+            if (googleHits.isNotEmpty()) return googleHits.joinToString("\n")
+        }
 
         // DuckDuckGo sometimes answers with a 202 challenge and no result markup. Do not treat
         // that as "no results": fall through to Bing's RSS feed, which is stable and cheap.
@@ -74,6 +86,30 @@ object ToolWeb {
             .toList()
 
         return if (bingHits.isEmpty()) "No results for \"$query\"." else bingHits.joinToString("\n")
+    }
+
+    private suspend fun google(
+        encoded: String,
+        key: String,
+        cx: String
+    ): List<String> {
+        val url = "https://www.googleapis.com/customsearch/v1" +
+            "?key=${java.net.URLEncoder.encode(key, "UTF-8")}" +
+            "&cx=${java.net.URLEncoder.encode(cx, "UTF-8")}" +
+            "&num=5&q=$encoded"
+        val raw = runCatching { Http.get(url) }.getOrNull().orEmpty()
+        if (raw.isBlank()) return emptyList()
+        return runCatching {
+            val items = JSONObject(raw).optJSONArray("items") ?: JSONArray()
+            (0 until items.length()).mapNotNull { index ->
+                val item = items.optJSONObject(index) ?: return@mapNotNull null
+                val title = item.optString("title")
+                val link = item.optString("link")
+                val snippet = item.optString("snippet")
+                if (title.isBlank() || link.isBlank()) return@mapNotNull null
+                if (snippet.isBlank()) "- $title ($link)" else "- $title ($link)\n  ${snippet.take(180)}"
+            }
+        }.getOrDefault(emptyList())
     }
 
     private fun cleanXml(value: String): String = value

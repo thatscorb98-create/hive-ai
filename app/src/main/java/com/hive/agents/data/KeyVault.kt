@@ -22,9 +22,13 @@ data class VaultKeys(
     val stripeSecretKey: String = "",
     val githubToken: String = "",
     val storageUrl: String = "",
-    val storageKey: String = ""
+    val storageKey: String = "",
+    /** Optional Google Programmable Search, so research can use real Google results. */
+    val googleSearchKey: String = "",
+    val googleSearchCx: String = ""
 ) {
     val hasNim: Boolean get() = nimApiKey.isNotBlank()
+    val hasGoogle: Boolean get() = googleSearchKey.isNotBlank() && googleSearchCx.isNotBlank()
     val hasMail: Boolean get() = agentMailApiKey.isNotBlank()
     val hasStripe: Boolean get() = stripeSecretKey.isNotBlank()
     val ready: Boolean get() = hasNim
