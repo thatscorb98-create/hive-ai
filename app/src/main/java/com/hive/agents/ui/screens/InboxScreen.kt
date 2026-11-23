@@ -9,10 +9,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,14 +40,19 @@ fun InboxScreen(
     state: HiveState,
     inbox: List<InboxMail>,
     onRefresh: (String) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    showBack: Boolean = true
 ) {
     var selected by remember { mutableStateOf(state.agents.firstOrNull()?.id.orEmpty()) }
     var tab by remember { mutableStateOf("Inbox") }
     val agent = state.agent(selected)
 
+    LaunchedEffect(state.agents) {
+        if (state.agent(selected) == null) selected = state.agents.firstOrNull()?.id.orEmpty()
+    }
+
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        item { BackRow("Home", onBack) }
+        if (showBack) item { BackRow("Home", onBack) }
 
         item {
             Text("Email", fontSize = 20.sp, fontWeight = FontWeight.Bold)
@@ -55,8 +62,8 @@ fun InboxScreen(
                 color = TextDim
             )
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                state.agents.take(4).forEach { candidate ->
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                items(state.agents, key = { it.id }) { candidate ->
                     TextButton(onClick = { selected = candidate.id }) {
                         Text(
                             candidate.name,

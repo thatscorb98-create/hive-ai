@@ -2,23 +2,21 @@ package com.hive.agents.ui
 
 import android.content.Intent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.NavigationBar
@@ -46,17 +44,12 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hive.agents.browser.AgentBrowserActivity
 import com.hive.agents.browser.BrowserHub
-import com.hive.agents.data.Models
 import com.hive.agents.ui.screens.BrowsersScreen
 import com.hive.agents.ui.screens.ChatScreen
 import com.hive.agents.ui.screens.HiveVizScreen
 import com.hive.agents.ui.screens.HomeScreen
 import com.hive.agents.ui.screens.InboxScreen
-import com.hive.agents.ui.screens.MissionScreen
-import com.hive.agents.ui.screens.MissionsScreen
-import com.hive.agents.ui.screens.SalesScreen
 import com.hive.agents.ui.screens.SettingsScreen
-import com.hive.agents.ui.screens.StudioScreen
 import com.hive.agents.ui.screens.TeamScreen
 import com.hive.agents.ui.theme.Amber
 import com.hive.agents.ui.theme.Danger
@@ -66,7 +59,7 @@ import com.hive.agents.ui.theme.Panel
 import com.hive.agents.ui.theme.TextDim
 
 enum class HiveScreen {
-    HOME, MISSIONS, MISSION, TEAM, CHAT, BUSINESS, STUDIO, INBOX, BROWSERS, VIZ, SETTINGS
+    HOME, TEAM, CHAT, INBOX, BROWSERS, VIZ, SETTINGS
 }
 
 @Composable
@@ -74,6 +67,7 @@ fun HiveApp(vm: HiveViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
     val pending by vm.pendingApproval.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
+    val loopOn by vm.loopOn.collectAsStateWithLifecycle()
     val notice by vm.notice.collectAsStateWithLifecycle()
     val keys by vm.keys.collectAsStateWithLifecycle()
     val inbox by vm.inbox.collectAsStateWithLifecycle()
@@ -83,7 +77,6 @@ fun HiveApp(vm: HiveViewModel) {
     val lifecycleOwner = LocalLifecycleOwner.current
 
     var screen by remember { mutableStateOf(HiveScreen.HOME) }
-    var openMission by remember { mutableStateOf<String?>(null) }
 
     // The company starts working when the app opens, without waiting for a button.
     DisposableEffect(lifecycleOwner) {
@@ -95,8 +88,6 @@ fun HiveApp(vm: HiveViewModel) {
     }
 
     // The agent asked for its browser: hand the real window to the human.
-    // SINGLE_TOP + CLEAR_TOP reuses the window that is already open for this bot (and brings it
-    // back to the front) instead of starting a second copy, so a repeated request cannot loop.
     LaunchedEffect(pendingBrowser) {
         val request = pendingBrowser ?: return@LaunchedEffect
         vm.clearBrowserRequest()
@@ -115,40 +106,34 @@ fun HiveApp(vm: HiveViewModel) {
             NavigationBar(containerColor = Panel) {
                 NavigationBarItem(
                     selected = screen == HiveScreen.HOME ||
-                        screen == HiveScreen.MISSIONS || screen == HiveScreen.MISSION,
+                        screen == HiveScreen.VIZ || screen == HiveScreen.TEAM,
                     onClick = { screen = HiveScreen.HOME },
                     icon = { Icon(Icons.Filled.Home, contentDescription = null) },
-                    label = { Text("Home", fontSize = 10.sp) }
-                )
-                NavigationBarItem(
-                    selected = screen == HiveScreen.TEAM,
-                    onClick = { screen = HiveScreen.TEAM },
-                    icon = { Icon(Icons.Filled.Person, contentDescription = null) },
-                    label = { Text("Agents", fontSize = 10.sp) }
+                    label = { Text("Home", fontSize = 9.sp) }
                 )
                 NavigationBarItem(
                     selected = screen == HiveScreen.CHAT,
                     onClick = { screen = HiveScreen.CHAT },
-                    icon = { Icon(Icons.Filled.Email, contentDescription = null) },
-                    label = { Text("Chat", fontSize = 10.sp) }
+                    icon = { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null) },
+                    label = { Text("Chat", fontSize = 9.sp) }
                 )
                 NavigationBarItem(
-                    selected = screen == HiveScreen.BROWSERS || screen == HiveScreen.VIZ,
+                    selected = screen == HiveScreen.BROWSERS,
                     onClick = { screen = HiveScreen.BROWSERS },
                     icon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                    label = { Text("Browsers", fontSize = 10.sp) }
+                    label = { Text("Browsers", fontSize = 9.sp) }
                 )
                 NavigationBarItem(
-                    selected = screen == HiveScreen.BUSINESS,
-                    onClick = { screen = HiveScreen.BUSINESS },
-                    icon = { Icon(Icons.Filled.ShoppingCart, contentDescription = null) },
-                    label = { Text("Business", fontSize = 10.sp) }
+                    selected = screen == HiveScreen.INBOX,
+                    onClick = { screen = HiveScreen.INBOX },
+                    icon = { Icon(Icons.Filled.Email, contentDescription = null) },
+                    label = { Text("Email", fontSize = 9.sp) }
                 )
                 NavigationBarItem(
                     selected = screen == HiveScreen.SETTINGS,
                     onClick = { screen = HiveScreen.SETTINGS },
                     icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
-                    label = { Text("Setup", fontSize = 10.sp) }
+                    label = { Text("Settings", fontSize = 9.sp) }
                 )
             }
         }
@@ -159,26 +144,23 @@ fun HiveApp(vm: HiveViewModel) {
                 .fillMaxSize()
                 .background(Ink)
         ) {
-            Header(
-                model = Models.label(state.settings.model),
-                hasKey = keys.hasNim,
-                onSetup = { screen = HiveScreen.SETTINGS }
-            )
-
             if (busy) {
                 LinearProgressIndicator(Modifier.fillMaxWidth(), color = Amber)
             }
 
             if (notice.isNotBlank()) {
-                Surface(color = Panel, modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                val bad = notice.contains("fail", true) ||
+                    notice.contains("error", true) ||
+                    notice.contains("missing", true)
+                Surface(color = Panel, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+                    Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             notice,
-                            fontSize = 12.sp,
-                            color = if (notice.startsWith("https://")) Good else TextDim,
+                            fontSize = 11.sp,
+                            color = if (bad) Danger else Good,
                             modifier = Modifier.weight(1f)
                         )
-                        TextButton(onClick = { vm.dismissNotice() }) { Text("Dismiss") }
+                        TextButton(onClick = { vm.dismissNotice() }) { Text("Dismiss", fontSize = 10.sp) }
                     }
                 }
             }
@@ -187,34 +169,15 @@ fun HiveApp(vm: HiveViewModel) {
                 when (screen) {
                     HiveScreen.HOME -> HomeScreen(
                         state = state,
+                        hasKey = keys.hasNim,
                         autopilot = state.settings.autopilot,
+                        loopOn = loopOn,
                         busy = busy,
-                        onCommand = { vm.command(it) },
                         onRunShift = { vm.runShift() },
                         onOpenViz = { screen = HiveScreen.VIZ },
-                        onOpenStudio = { screen = HiveScreen.STUDIO },
-                        onOpenBrowsers = { screen = HiveScreen.BROWSERS },
-                        onOpenInbox = { screen = HiveScreen.INBOX },
-                        onOpenMissions = { screen = HiveScreen.MISSIONS },
-                        onOpenMission = { id -> openMission = id; screen = HiveScreen.MISSION }
-                    )
-
-                    HiveScreen.MISSIONS -> MissionsScreen(
-                        state = state,
-                        onCreate = { t, b -> vm.createMission(t, b) },
-                        onOpen = { id -> openMission = id; screen = HiveScreen.MISSION },
-                        onOpenViz = { screen = HiveScreen.VIZ },
-                        onOpenStudio = { screen = HiveScreen.STUDIO },
-                        onOpenInbox = { screen = HiveScreen.INBOX },
-                        onOpenBrowsers = { screen = HiveScreen.BROWSERS }
-                    )
-
-                    HiveScreen.MISSION -> MissionScreen(
-                        state = state,
-                        missionId = openMission,
-                        onBack = { screen = HiveScreen.HOME },
-                        onStart = { vm.startMission(it) },
-                        onDelete = { vm.deleteMission(it); screen = HiveScreen.HOME }
+                        onOpenChat = { screen = HiveScreen.CHAT },
+                        onOpenTeam = { screen = HiveScreen.TEAM },
+                        onSetup = { screen = HiveScreen.SETTINGS }
                     )
 
                     HiveScreen.TEAM -> TeamScreen(
@@ -227,38 +190,26 @@ fun HiveApp(vm: HiveViewModel) {
 
                     HiveScreen.CHAT -> ChatScreen(
                         state = state,
-                        onSend = { text ->
-                            val target = state.orchestrator?.id
-                            if (target != null) vm.messageAgent(target, text)
-                        }
-                    )
-
-                    HiveScreen.BUSINESS -> SalesScreen(
-                        state = state,
-                        onMove = { id, stage -> vm.moveProspect(id, stage) },
-                        onPay = { vm.createPaymentLink(it) }
-                    )
-
-                    HiveScreen.STUDIO -> StudioScreen(
-                        state = state,
-                        onAddDeliverable = { t, b -> vm.addDeliverable(t, b) },
-                        onSuggestion = { t, p -> vm.addSuggestion(t, p) },
-                        onCopied = { vm.markSuggestionCopied(it) },
-                        onBack = { screen = HiveScreen.HOME }
+                        busy = busy,
+                        onSend = { agentId, text -> vm.messageAgent(agentId, text) },
+                        onOpenViz = { screen = HiveScreen.VIZ },
+                        onOpenTeam = { screen = HiveScreen.TEAM }
                     )
 
                     HiveScreen.INBOX -> InboxScreen(
                         state = state,
                         inbox = inbox,
                         onRefresh = { vm.refreshInbox(it) },
-                        onBack = { screen = HiveScreen.HOME }
+                        onBack = { screen = HiveScreen.HOME },
+                        showBack = false
                     )
 
                     HiveScreen.BROWSERS -> BrowsersScreen(
                         state = state,
                         currentAgent = currentBrowser,
                         onOpen = { agentId -> vm.openBrowser(agentId) },
-                        onBack = { screen = HiveScreen.HOME }
+                        onBack = { screen = HiveScreen.HOME },
+                        showBack = false
                     )
 
                     HiveScreen.VIZ -> HiveVizScreen(
@@ -272,8 +223,7 @@ fun HiveApp(vm: HiveViewModel) {
                         onSaveKeys = { vm.saveKeys(it) },
                         onSaveSettings = { vm.updateSettings(it) },
                         onAutopilot = { vm.setAutopilot(it) },
-                        onForget = { vm.forgetMemory(it) },
-                        onBack = { screen = HiveScreen.HOME }
+                        onForget = { vm.forgetMemory(it) }
                     )
                 }
             }
@@ -284,37 +234,14 @@ fun HiveApp(vm: HiveViewModel) {
 }
 
 @Composable
-private fun Header(model: String, hasKey: Boolean, onSetup: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(Ink)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            Modifier
-                .width(10.dp)
-                .height(10.dp)
-                .background(if (hasKey) Good else Danger)
-        )
-        Spacer(Modifier.width(8.dp))
-        Column(Modifier.weight(1f)) {
-            Text("HIVE", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Amber)
-            Text(model, fontSize = 10.sp, color = TextDim)
-        }
-        if (!hasKey) {
-            TextButton(onClick = onSetup) { Text("Add key", fontSize = 12.sp) }
-        }
-    }
-}
-
-@Composable
 fun BackRow(label: String, onBack: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.Start
+        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        TextButton(onClick = onBack) { Text("< $label", fontSize = 12.sp, color = TextDim) }
+        TextButton(onClick = onBack) {
+            Text("< $label", fontSize = 11.sp, color = TextDim, fontWeight = FontWeight.Medium)
+        }
+        Spacer(Modifier.width(4.dp))
     }
 }

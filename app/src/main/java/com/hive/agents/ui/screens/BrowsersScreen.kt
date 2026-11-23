@@ -35,10 +35,11 @@ fun BrowsersScreen(
     state: HiveState,
     currentAgent: String?,
     onOpen: (String) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    showBack: Boolean = true
 ) {
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        item { BackRow("Home", onBack) }
+        if (showBack) item { BackRow("Home", onBack) }
 
         item {
             Text("Browsers", fontSize = 20.sp, fontWeight = FontWeight.Bold)

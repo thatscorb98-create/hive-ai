@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.sp
 import com.hive.agents.data.HiveState
 import com.hive.agents.data.Models
 import com.hive.agents.data.VaultKeys
-import com.hive.agents.ui.BackRow
 import com.hive.agents.ui.EmptyState
 import com.hive.agents.ui.HiveCard
 import com.hive.agents.ui.LabeledField
@@ -42,8 +41,7 @@ fun SettingsScreen(
     onSaveKeys: (VaultKeys) -> Unit,
     onSaveSettings: (com.hive.agents.data.Settings) -> Unit,
     onAutopilot: (Boolean) -> Unit,
-    onForget: (String) -> Unit,
-    onBack: () -> Unit
+    onForget: (String) -> Unit
 ) {
     var nim by remember(keys) { mutableStateOf(keys.nimApiKey) }
     var mailKey by remember(keys) { mutableStateOf(keys.agentMailApiKey) }
@@ -57,10 +55,9 @@ fun SettingsScreen(
     var goal by remember(state.settings) { mutableStateOf(state.settings.goal) }
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        item { BackRow("Home", onBack) }
-
         item {
-            Text("Setup", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(10.dp))
+            Text("Settings", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text(
                 "Keys are encrypted on this device in hive-secrets.json, with a backup copy, and survive an in-place app update.",
                 fontSize = 11.sp,
@@ -113,7 +110,7 @@ fun SettingsScreen(
         }
 
         item {
-            SectionHeader("MODEL", "free NVIDIA tier")
+            SectionHeader("MODEL", "free NVIDIA tier - Hive checks the live catalog")
             Models.all.forEach { model ->
                 HiveCard(
                     accent = if (state.settings.model == model) Amber else null,
