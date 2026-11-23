@@ -379,14 +379,14 @@ class ToolRegistry(
                         messages = state.messages + Message(
                             agentId = agent.id,
                             kind = MessageKind.SYSTEM,
-                            body = "Sale recorded: $company - $${\"%.2f\".format(cents / 100.0)}"
+                            body = "Sale recorded: $company - $${"%.2f".format(cents / 100.0)}"
                         )
                     )
                 }
                 memory.remember(
                     agent.id,
                     MemoryKind.FACT,
-                    "Sale: $company, $${\"%.2f\".format(cents / 100.0)}",
+                    "Sale: $company, $${"%.2f".format(cents / 100.0)}",
                     source = "sales"
                 )
                 "Recorded payment from $company. Deliver the work and mark it delivered when it is done."
