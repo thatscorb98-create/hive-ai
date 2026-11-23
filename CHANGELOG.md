@@ -1,11 +1,58 @@
 # Changelog
 
+## v2.13.3+23 — 2026-11-23
+
+Makes the crew actually work together: every shift hands a job to several bots, in waves, with the earlier wave's output passed to the next one. Also adds optional Google search.
+
+**Fixed — only the boss and Scout ever worked**
+- **A failed plan collapsed the shift to one task.** When the lead's JSON plan did not parse, `planTasks` returned a single `fallbackTask`, and that task went to the first non-lead bot (Scout). One bot worked, everyone else sat idle, and the mission could never get past its first step. Planning now falls back to `rosterPlan`, which gives the stage-relevant specialists a concrete job, fills the rest from whoever has waited longest, and always includes the boss's coordination job. A usable model plan is topped up the same way when it leaves people out.
+- **Unknown roles always landed on Scout.** `parseTasks` assigned any role it could not match to the first specialist. It now matches role *or* bot name and otherwise picks the specialist with the oldest last task.
+- **No visible delegation.** The lead now posts a `Shift plan, N bots working` system message listing every assignee and task, and sends each bot a `DM` with its job before work starts. The owner can see the boss handing out the work.
+- **Bots worked in isolation.** Shifts run in three waves: context (plan, research, offer, sample), then selling and building, then proofreading. Bots inside a wave still dispatch in parallel; each wave receives the finished output of the previous one (`completedWork`) inside its prompt, so a bot builds on a teammate's result instead of starting from nothing.
+
+**Fixed — the boss stopped after the first command**
+- **A chat order to the boss is now a mission.** `HiveViewModel.messageAgent` sent an order to the boss through `converse`, which could only answer and call a few tools itself. Messages to the primary bot now go through `TeamEngine.takeOrder`: it creates a mission from the order, plans it, dispatches the whole team in waves, and replies with the real per-bot result list. Talking to a specialist is still a direct conversation.
+
+**Added**
+- **Google search, optionally.** `search_web` tries the Google Custom Search JSON API first when a Google API key and search engine id (`cx`) are in the vault, then DuckDuckGo, then Bing RSS. Google has no free scraping endpoint, which is why this is a key pair and not a default. Settings has both fields and a note.
+- `VaultKeys.googleSearchKey`, `VaultKeys.googleSearchCx`, `VaultKeys.hasGoogle`.
+- **The state file cannot grow without limit.** A busy shift writes around twenty messages and the whole state is rewritten on every change, so an uncapped file would eventually make every write slow. `HiveStore.update` now keeps the last 600 messages, 400 tasks, 800 memory entries and 200 inbox items. Pipeline, products, deliverables and paid work are never trimmed.
+- Version 2.13.3 / versionCode 23.
+
+**Verified**
+- `gradle clean :app:assembleDebug --no-build-cache` succeeds from a fresh clone of `main`: debug APK **28,236,953 bytes**, SHA-256 `b458b76f8d62707301f9b2031bd1b3110039fc1cb2b97201b5062ab83fe0ce11`. An incremental local build produced a different size, so the number above is the clean-clone build.
+- APK metadata: `com.hive.agents`, versionCode 23, versionName 2.13.3, minSdk 28, targetSdk 35.
+- Not verified on a device or emulator, and no NVIDIA API key was available: the new planning fallback, waves, handoff prompts, `takeOrder` path and Google branch are compiled, not exercised against the live model.
+
+## v2.13.2+22 — 2026-11-23
+
+Fixes the empty reasoning responses that blocked Scout, the tool loop that left Chief saying "Stopped after six tool rounds," and the search call that returned "No results" when DuckDuckGo challenged the request.
+
+**Fixed**
+- **Empty responses from reasoning models**: hidden reasoning counts against `max_tokens`. The planner had 500 tokens and task calls 1,200, so a model could spend the whole completion thinking and return HTTP 200 with no content and no tool call. The planner now gets 3,000; tool calls default to 8,192. An empty reply retries once at twice the budget, then once on another live model. The error now carries `finish_reason` so a future failure is diagnosable.
+- **Tool results were sent as user messages**: the assistant's `tool_calls` were replaced with "Calling tools." and every result came back as a user message. `NimClient` now echoes the real assistant `tool_calls` and sends each result as `role: "tool"` with its `tool_call_id`. Models can see which result belongs to which call and stop repeating calls.
+- **"Stopped after six tool rounds"**: the conversation loop now has eight rounds and, if the budget is exhausted, makes one no-tools wrap-up call asking for a short report. `dispatch` does the same. A dead-end round count is no longer the bot's answer.
+- **Silent planning failure**: when the planning call fails, the lead posts a system message with the reason and says it is using one fallback task, instead of silently assigning a generic task to the first specialist.
+- **Search returned "No results" on a DuckDuckGo challenge**: DDG's HTML endpoint can answer HTTP 202 with no result markup. `search_web` now detects that and falls back to Bing RSS, returning titles, links and snippets. Requests send a browser User-Agent and Accept-Language. The tool description asks for a city or region when looking for local businesses.
+
+**Changed**
+- `NimClient` sends `chat_template_kwargs: {"force_nonempty_content": true}` to Nemotron models when tools are offered. NVIDIA recommends this so a reasoning model cannot return an empty assistant message during tool calling. It is not sent to non-Nemotron models.
+- Tool definitions moved to `agent/ToolSpecs.kt`, web search to `agent/ToolWeb.kt`, and approval copy to `agent/ToolApproval.kt`. Behavior is unchanged; the registry is small enough to review.
+- Version 2.13.2 / versionCode 22.
+
+**Verified**
+- `gradle clean :app:assembleDebug` succeeds from a fresh public clone at commit `4ed3c9a`: debug APK **28,204,185 bytes**, SHA-256 `6255f1ed5bdf1ef510304f323419afe15ec77e87926c90b01a3bbfa04b912f91`.
+- APK metadata: `com.hive.agents`, versionCode 22, versionName 2.13.2, minSdk 28, targetSdk 35.
+- Downloaded again from Catbox after upload: hash matched, zip structure clean.
+- DuckDuckGo returned HTTP 202 with no results from the build VM; Bing RSS returned HTTP 200 with 10 items. The fallback parser is compiled, not run inside the app.
+- Not verified on a device or emulator, and no NVIDIA API key was available. The empty-response retry, tool-call protocol, wrap-up path and search parser have **not** been exercised against the live model.
+
 ## v2.13.1+21 — 2026-11-23
 
 Starts the company on the first screen instead of waiting for a lifecycle event that may already have passed.
 
 **Fixed**
-- **Cold-launch autopilot**: Compose can first compose after the activity is RESUMED, so the `ON_RESUME` observer added in `DisposableEffect` never received an initial event. `HiveApp` now also calls `onAppForeground()` from `LaunchedEffect(Unit)`; the loop guard makes the resume path idempotent. The company starts working as soon as the app opens.
+- **Cold-launch autopilot**: Compose can first compose after the activity is RESUMED, so the `ON_RESUME` observer added in `DisposableEffect` never received an initial event. `HiveApp` now also calls `onAppForeground()` from a `LaunchedEffect(Unit)`; the loop guard makes the resume path idempotent. The company starts working as soon as the app opens.
 - **Duplicate crew onboarding**: `TeamEngine.ensureCoreTeam()` is now guarded by a mutex and re-checks the roster under the lock, so the launch fallback and a failed shift cannot add the same six bots twice.
 
 **Verified**
