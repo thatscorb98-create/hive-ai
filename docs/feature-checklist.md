@@ -2,7 +2,7 @@
 
 Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs at `docs.x.ai/grok-bot`.
 
-> **Status meaning (updated for v2.13.1):** ✅ = implemented in `app/` and builds,
+> **Status meaning (updated for v2.13.4):** ✅ = implemented in `app/` and builds,
 > 🟡 = partially implemented, ⬜ = not started. Earlier versions of this file described the
 > shipped APK; the statuses below describe the code in this repository.
 
@@ -88,6 +88,7 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 | 7.6 | **3D team view** (Hive-specific) | `HiveVizScreen` station cutaway: rooms, hallways, packets, work distribution | ✅ |
 | 7.7 | Tell a bot to add something and it does | `TeamEngine.converse` runs tools during the reply | ✅ |
 | 7.8 | Bots keep working while the human watches | continuous loop + visible handoffs; local crew fallback if hiring fails | ✅ |
+| 7.9 | Tool calls and results are connected | assistant `tool_calls` echoed; each result is `role: "tool"` with `tool_call_id`; eight-round cap ends with a prose wrap-up | ✅ |
 
 ## 8. Skills and routines
 
@@ -113,25 +114,26 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 
 | # | Requirement | Hive AI | Status |
 |---|---|---|---|
-| 10.1 | Per-agent email address for leads | `AgentMailApi` | ✅ |
-| 10.2 | In-app per-agent inbox + sent viewer | Email tab (`InboxScreen`) | ✅ |
+| 10.1 | Per-agent email address for leads | one company inbox via `AgentMailApi`; per-agent provisioning not built | 🟡 |
+| 10.2 | In-app inbox + sent viewer | Email tab (`InboxScreen`), labeled as the shared inbox | 🟡 |
 | 10.3 | Stripe link only when a buyer is ready | approval-gated, on demand | ✅ |
 | 10.4 | Pipeline lead → qualify → pitch → close | `Prospect` + bot tools; no separate sales tab | 🟡 |
 | 10.5 | Business identity (Local Reach Workshop, EIN) on documents | settings fields, not yet on PDFs | 🟡 |
 | 10.6 | Suggestion box that outputs a coding-agent prompt | `SuggestionBox` + copy button | ✅ |
 | 10.7 | Products with a checkout per product | `create_product`, `create_checkout`; products on demand, no Business tab | ✅ |
 | 10.8 | Bots know who they work for | system prompt + seeded shared memory | ✅ |
-| 10.9 | Bots build lead lists and contact them | `add_leads`, `search_web`, `fetch_page`, `send_email` | ✅ |
-| 10.10 | Progress is read by sales made | `record_sale`, Home sales count and revenue | ✅ |
+| 10.9 | Bots build lead lists and contact them | `add_leads`, `search_web` (Google CSE when keys are set, then DuckDuckGo, then Bing RSS), `fetch_page`, `send_email`; city/region hint for local leads | ✅ |
+| 10.10 | Progress is read by paid sales made | `record_sale` (ask-first), Home paid-sales count and revenue | ✅ |
 | 10.11 | Five tabs, no manual Business form | Home, Chat, Browsers, Email, Settings; products made by bots | ✅ |
 | 10.12 | Lead bot knows it runs Local Reach Workshop and must build teams | lead prompt + shared facts | ✅ |
 | 10.13 | Continuous loop researches, sells, collects and delivers | `HiveViewModel.startLoop` + `nextCompanyMission` | ✅ |
-| 10.14 | Paid work is delivered before new leads | `Prospect.paid/delivered`, `deliver_work` | ✅ |
+| 10.14 | Paid work is delivered before new leads | `Prospect.paid/delivered`, `deliver_work` refuses unpaid jobs | ✅ |
 | 10.15 | Customer samples made by a showcase bot | `create_sample`, Showcase role, Home RECENT WORK | ✅ |
 | 10.16 | Live view of messages and work distribution | `HiveVizScreen` station cutaway, tap a room | ✅ |
-| 10.17 | Model failures are visible, not fake successes | `NimException`, live `/v1/models`, 404/410 fallback, failed task/shift | ✅ |
+| 10.17 | Model failures are visible, not fake successes | `NimException`, live `/v1/models`, 404/410 fallback, reasoning-budget retry, failed task/shift | ✅ |
 | 10.18 | Company does not stay stuck at one bot | `ensureCoreTeam` local crew fallback | ✅ |
-| 10.19 | Tasks run at the same time, not one at a time | `TeamEngine.runMission` parallel dispatch | ✅ |
+| 10.19 | Tasks run at the same time, not one at a time | `TeamEngine.executeMission` parallel dispatch inside each wave | ✅ |
+| 10.20 | Every shift gives several bots a job, with the lead delegating visibly | `rosterPlan`/`mergePlan` fallback, `announcePlan`, `MAX_TASKS = 5`, `takeOrder` turns a chat order into a mission | ✅ |
 
 ## 11. Platform and model
 
