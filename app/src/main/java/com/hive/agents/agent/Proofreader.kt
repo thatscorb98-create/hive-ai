@@ -1,6 +1,7 @@
 package com.hive.agents.agent
 
 import com.hive.agents.data.HiveStore
+import com.hive.agents.data.Models
 import com.hive.agents.net.NimClient
 import org.json.JSONObject
 
@@ -20,6 +21,11 @@ class Proofreader(
 
     private val enabled: Boolean get() = store.snapshot().settings.proofreadOutbound
 
+    private val model: String
+        get() = store.snapshot().settings.let {
+            if (it.routeModels) Models.DEEPSEEK else it.model
+        }
+
     suspend fun outbound(subject: String, body: String): Pair<String, String> {
         if (!enabled || body.isBlank()) return subject to body
         val reply = nim.chat(
@@ -27,7 +33,7 @@ class Proofreader(
                 NimClient.Msg("system", EMAIL_RULES),
                 NimClient.Msg("user", "Subject: $subject\n\nDraft:\n$body")
             ),
-            model = store.snapshot().settings.model,
+            model = model,
             maxTokens = 900,
             temperature = 0.2
         )
@@ -45,7 +51,7 @@ class Proofreader(
                 NimClient.Msg("system", COPY_RULES),
                 NimClient.Msg("user", "This is the $what:\n\n$text")
             ),
-            model = store.snapshot().settings.model,
+            model = model,
             maxTokens = 700,
             temperature = 0.2
         )
