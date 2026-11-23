@@ -26,6 +26,7 @@ import com.hive.agents.ui.Pill
 import com.hive.agents.ui.SectionHeader
 import com.hive.agents.ui.theme.Amber
 import com.hive.agents.ui.theme.Good
+import com.hive.agents.ui.theme.Teal
 import com.hive.agents.ui.theme.TextDim
 
 /**
@@ -122,7 +123,11 @@ fun SalesScreen(
             HiveCard(accent = stageColor(prospect)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(prospect.company, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                    Pill(prospect.stage.name.lowercase(), stageColor(prospect))
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (prospect.paid) Pill("paid", Good)
+                        if (prospect.delivered) Pill("delivered", Teal)
+                        Pill(prospect.stage.name.lowercase(), stageColor(prospect))
+                    }
                 }
                 if (prospect.contactName.isNotBlank() || prospect.email.isNotBlank()) {
                     Text(
@@ -151,6 +156,24 @@ fun SalesScreen(
                     TextButton(onClick = { onPay(prospect.id) }) {
                         Text("Create Stripe link", fontSize = 11.sp, color = Amber)
                     }
+                }
+            }
+        }
+
+        val samples = state.deliverables.filter { it.isSample }.sortedByDescending { it.createdAt }
+        item { SectionHeader("SAMPLES", "showcase work a buyer can see before paying") }
+        if (samples.isEmpty()) {
+            item { EmptyState("No samples yet. The showcase bot makes them for each offer.") }
+        }
+        items(samples.take(6)) { sample ->
+            HiveCard(accent = Teal) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(sample.title, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Text(sample.kind.name.lowercase(), fontSize = 10.sp, color = TextDim)
+                }
+                if (sample.body.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(sample.body.take(240), fontSize = 11.sp, color = TextDim)
                 }
             }
         }

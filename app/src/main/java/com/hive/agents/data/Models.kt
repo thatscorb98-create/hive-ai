@@ -21,7 +21,7 @@ enum class DeliverableKind { WEBSITE, IMAGE, COPY, DOCUMENT, CODE, OTHER }
 @Serializable
 enum class ProspectStage { NEW, QUALIFIED, PITCHED, NEGOTIATING, WON, LOST }
 
-/** A durable teammate. Hired by the lead bot or by the human, and it keeps its memory. */
+/** A durable teammate. Hired by the orchestrator or by the human, and it keeps its memory. */
 @Serializable
 data class Agent(
     val id: String = UUID.randomUUID().toString(),
@@ -35,7 +35,9 @@ data class Agent(
     val active: Boolean = true,
     /** Separate browser profile id, so each agent keeps its own cookies and session. */
     val browserProfile: String = "",
-    val primary: Boolean = false
+    val primary: Boolean = false,
+    /** Optional model override. Blank means route by role. */
+    val model: String = ""
 ) {
     val profileId: String get() = browserProfile.ifBlank { id }
 }
@@ -84,6 +86,8 @@ data class Deliverable(
     val title: String,
     val body: String = "",
     val uri: String = "",
+    /** A demo made for buyers to see, not a paid job. */
+    val isSample: Boolean = false,
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -122,6 +126,9 @@ data class Prospect(
     val notes: String = "",
     val valueCents: Long = 0L,
     val ownerAgentId: String = "",
+    /** Payment received. The work still has to be delivered. */
+    val paid: Boolean = false,
+    val delivered: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis()
 )
 
@@ -211,8 +218,10 @@ data class Settings(
     /** The company runs a shift when the app opens and every 15 minutes after that. */
     val autopilotDefaulted: Boolean = false,
     /** One-time upgrade of the old auto-hired trio into a single lead who builds the team. */
-    val teamCleaned: Boolean = false,
+    val teamCleaned: Boolean = true,
     val proofreadOutbound: Boolean = true,
+    /** Lead on the strong model, specialists on Lightning, proofreader on DeepSeek. */
+    val routeModels: Boolean = true,
     val lastShiftAt: Long = 0L,
     val buyingGuide: String = "Digital goods, AI-run services, websites, graphics, copy and automation for local businesses."
 )

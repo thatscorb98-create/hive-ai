@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hive.agents.agent.ModelRouter
 import com.hive.agents.data.Agent
 import com.hive.agents.data.HiveState
 import com.hive.agents.ui.EmptyState
@@ -71,7 +72,10 @@ fun TeamScreen(
                         Text(agent.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                         Text(agent.role, fontSize = 11.sp, color = TextDim)
                     }
-                    if (agent.primary) Pill("primary", Amber)
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (agent.primary) Pill("primary", Amber)
+                        Pill(ModelRouter.label(agent, state.settings), TextDim)
+                    }
                 }
                 if (agent.charter.isNotBlank()) {
                     Spacer(Modifier.height(4.dp))
