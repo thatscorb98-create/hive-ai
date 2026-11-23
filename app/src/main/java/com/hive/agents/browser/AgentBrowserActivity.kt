@@ -64,18 +64,22 @@ class AgentBrowserActivity : ComponentActivity() {
     /** A URL pushed by a second open request while this window already exists. */
     private val incomingUrl = mutableStateOf<String?>(null)
 
+    /** The bot that owns the window right now. Updated when another bot is opened. */
+    private val currentAgentId = mutableStateOf("")
+    private val currentAgentName = mutableStateOf("Bot")
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val agentId = intent.getStringExtra(EXTRA_AGENT_ID).orEmpty()
-        val agentName = intent.getStringExtra(EXTRA_AGENT_NAME).orEmpty()
+        currentAgentId.value = intent.getStringExtra(EXTRA_AGENT_ID).orEmpty()
+        currentAgentName.value = intent.getStringExtra(EXTRA_AGENT_NAME).orEmpty().ifBlank { "Bot" }
         val url = intent.getStringExtra(EXTRA_URL).orEmpty()
 
         setContent {
             HiveTheme {
                 BrowserScreen(
-                    agentId = agentId,
-                    agentName = agentName.ifBlank { "Bot" },
+                    agentId = currentAgentId.value,
+                    agentName = currentAgentName.value,
                     startUrl = url.ifBlank { "https://www.google.com" },
                     incomingUrl = incomingUrl,
                     onClose = { finish() }
@@ -87,8 +91,21 @@ class AgentBrowserActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        val url = intent.getStringExtra(EXTRA_URL).orEmpty()
-        if (url.isNotBlank()) incomingUrl.value = url
+        val nextId = intent.getStringExtra(EXTRA_AGENT_ID).orEmpty()
+        val nextName = intent.getStringExtra(EXTRA_AGENT_NAME).orEmpty()
+        val nextUrl = intent.getStringExtra(EXTRA_URL).orEmpty()
+        val changedOwner = nextId.isNotBlank() && nextId != currentAgentId.value
+
+        if (nextId.isNotBlank()) currentAgentId.value = nextId
+        if (nextName.isNotBlank()) currentAgentName.value = nextName
+
+        // Switching bots must not leave the previous bot's page in the new bot's window.
+        // about:blank is deliberately not a website, so no previous session content leaks across.
+        incomingUrl.value = when {
+            changedOwner -> nextUrl.ifBlank { "about:blank" }
+            nextUrl.isNotBlank() -> nextUrl
+            else -> null
+        }
     }
 
     companion object {
@@ -151,7 +168,7 @@ private fun BrowserScreen(
      * already open otherwise leaves the hub holding a stopped view (or another bot's window),
      * and the bot would drive the wrong page.
      */
-    DisposableEffect(lifecycleOwner, webView) {
+    DisposableEffect(lifecycleOwner, webView, agentId) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> BrowserHub.attach(agentId, webView)
