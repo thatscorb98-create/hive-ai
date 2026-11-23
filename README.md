@@ -2,9 +2,11 @@
 
 Autonomous AI agents that run a service business end to end: they find leads, email them, do the work (websites, graphics, copy, digital goods) and close with a Stripe link only when a buyer is ready.
 
-The company starts with **one lead bot**. It knows it runs **Local Reach Workshop**, and it hires the marketing, research, sales, product, showcase and proofreading people it needs. The owner can hire or delete anyone, and can give the lead a work order in plain language from the chat.
+The company starts with **one lead bot**. It knows it runs **Local Reach Workshop**, and it hires the marketing, research, sales, product, showcase and proofreading people it needs. If the lead model fails or refuses to hire, a local onboarding pass gives the company its core crew instead of leaving it stranded at one bot.
 
-While the app is open the company runs a continuous loop: research real local leads, work out what each one needs, make samples a buyer can see, reach out, follow up, close, take payment, then deliver the work. The crew works in parallel, with the lead and product bot on a strong model, research and sales on a fast model, and the proofreader on a cheap one.
+While the app is open the company runs a continuous loop: research real local leads, work out what each one needs, make samples a buyer can see, reach out, follow up, close, take payment, then deliver the work. The crew works in parallel, with the lead and product bot on a strong model, research and sales on a fast model, and the proofreader on a cheap one. Model ids are checked against NVIDIA's live catalog, because retired ids were making shifts fail silently.
+
+The app is five tabs: **Home, Chat, Browsers, Email, Settings**. Chat is a Grok Bot-style company thread with a left rail of bot blobs, visible bot-to-bot handoffs and DMs, iMessage-dark bubbles and code blocks. The 3D view is a StarNet-inspired station cutaway: rooms are departments, hallways are handoffs, and every moving dot is a real message.
 
 Android app — Kotlin + Jetpack Compose (Material 3), OkHttp, kotlinx.serialization. Models run on NVIDIA's hosted API.
 
@@ -12,7 +14,7 @@ Android app — Kotlin + Jetpack Compose (Material 3), OkHttp, kotlinx.serializa
 
 | | |
 |---|---|
-| Version | 2.12.0, build 19 — tagged `v2.12.0+19` |
+| Version | 2.13.0, build 20 — tagged `v2.13.0+20` |
 | Package | `com.hive.agents` |
 | Source | Kotlin + Compose, right here |
 | Build | `gradle :app:assembleDebug` — verified from a source-only copy |
@@ -39,9 +41,12 @@ Read **`AGENT_README.md`** first. It is the living handoff: what changed in this
 
 | Area | State |
 |---|---|
-| Starting team | One bot, `Chief`, knows it runs Local Reach Workshop and builds the rest of the company itself |
-| Hiring | `hire_agent` tool: the lead (or any bot) creates marketing, research, sales, product and proofreading bots; the human can hire or delete, and deletion removes that bot's memory |
-| Missions | Plan → task split → **parallel dispatch** → timeline → deliverables |
+| Starting team | One bot, `Chief`, knows it runs Local Reach Workshop and builds the rest of the company itself; `ensureCoreTeam` is the local safety net if a shift leaves it alone |
+| Hiring | `hire_agent` tool: the lead (or any bot) creates marketing, research, sales, product, showcase and proofreading bots; the human can hire or delete, and deletion removes that bot's memory |
+| Missions | Plan → task split → **parallel dispatch** → handoff messages → deliverables |
+| Company chat | Left rail of bot blobs plus Company, per-bot threads, visible DMs/handoffs, iMessage-dark bubbles, timestamps and copyable code blocks |
+| Tabs | Exactly Home, Chat, Browsers, Email, Settings. Business, Studio and Agents are not tabs |
+| Models | Per-role routing plus a live `/v1/models` check, retired-id migration and a one-shot fallback; a failed call becomes a failed task, never fake bot copy |
 | Tool registry | `remember`, `hire_agent`, `add_leads`, `record_sale`, `deliver_work`, `create_sample`, `proofread`, `fetch_page`, `send_email`, `create_payment_link`, `save_deliverable`, `search_web`, `add_prospect`, `message_teammate`, `open_website`, `read_page`, `click_text`, `type_into`, `create_product`, `create_checkout` |
 | Chat as work order | A human message gives the bot a real turn with tools, so "add a product" or "make a lead list" actually happens |
 | Lead generation | Sales bots build lead lists with `search_web` + `fetch_page`, add them with `add_leads`, contact them, and record closings with `record_sale` |
@@ -50,14 +55,13 @@ Read **`AGENT_README.md`** first. It is the living handoff: what changed in this
 | Memory | Per-agent memory plus a mistake ledger recalled before similar work; shared business facts seeded on first launch |
 | Email | Per-agent inbox + sent viewer (AgentMail) |
 | Browsers | A **Browsers tab** lists every bot; one live window per bot, edge-to-edge safe so the chrome and page fit the screen, with zoom, address bar and human takeover |
-| Autopilot | **On by default.** While the app is open the team loops through the sales funnel every 45 seconds; WorkManager adds a 15-minute shift in the background. A wholly failed shift backs off for five minutes |
-| Progress | Measured by **sales made**: Home and Business show sales count and collected revenue, and the bots are told to judge themselves the same way |
+| Autopilot | **On by default.** While the app is open the team loops through the sales funnel every 45 seconds; WorkManager adds a 15-minute shift in the background. A wholly failed shift backs off for five minutes and reports in Chat |
+| Progress | Measured by **sales made**: Home shows sales count and collected revenue, and the bots are told to judge themselves the same way |
 | Fulfilment | `record_sale` records payment, `deliver_work` saves the finished work and closes the job; paid, undelivered work is the loop's first priority |
-| Samples | The Showcase bot makes customer-facing samples with `create_sample`; they are proofread and shown in Business |
-| Products | Digital goods and AI-run services with an on-demand Stripe checkout; the Business tab shows them without manual add forms |
-| Sales | Pipeline with advance and on-demand Stripe link, services list, owner per lead |
-| Studio | Deliverables and a suggestion box that writes coding-agent prompts |
-| Hive view | Pseudo-3D command deck: depth-scaled orbit, live message packets, work distribution per bot, and each bot's model. Tap a bot to trace its traffic |
+| Samples | The Showcase bot makes customer-facing samples with `create_sample`; they are proofread and shown in Home's RECENT WORK strip |
+| Products | Digital goods and AI-run services are made by the crew on demand; there is no manual Business tab or add form |
+| Deliverables | Finished work lives in state and appears in Home's RECENT WORK strip; mission timelines are still in state |
+| Hive Station | 2.5D station cutaway: seven department rooms, isometric lids, hallways as handoff lanes, bots at workstations, live message packets, tap-to-isolate, live flow and per-bot work distribution |
 | Vault | Keys AES-GCM encrypted with Android Keystore, atomic `hive-secrets.json`, plus a backup copy; state has a backup too |
 
 ## Known gaps
@@ -67,9 +71,10 @@ Read **`AGENT_README.md`** first. It is the living handoff: what changed in this
 - The proofreader removes AI tells and protects facts, but it is not a fact-checker. A bot can still write something wrong; keeping claims true remains the agent's job.
 - Nothing has been run on a device or emulator. The APK compiles from a clean source copy; screens and tools are untested at runtime.
 - Release signing is blocked: the original keystore is not available, so a build cannot install over the 2.9.0 APK as an update. See `docs/source-recovery.md`.
-- WorkManager may delay the 15-minute shift under Doze.
+- WorkManager may delay the 15-minute shift under Doze, and its background shift still starts from the standing goal rather than the foreground funnel order.
 - The foreground loop spends API credits while the app process is alive. Turn Autopilot off to stop it; there is no daily cap yet.
-- Tasks now run at the same time. If two are assigned to the same bot, their messages can interleave.
+- Tasks run at the same time. If two are assigned to the same bot, their messages can interleave.
+- The station, chat rail, code blocks, crew fallback and model fallback are compiled, not viewed on a device.
 
 ## Non-negotiables
 
@@ -91,8 +96,8 @@ app/src/main/java/com/hive/agents/
   net/                         NimClient, AgentMailApi, StripeApi, shared OkHttp client
   service/                     AutopilotWorker (WorkManager shift every 15 minutes)
   ui/                          activity, navigation, view model, components, theme
-  ui/screens/                  Home, Missions, Mission, Team, Chat, Inbox, Sales, Studio,
-                               Browsers, HiveViz, Settings
+  ui/screens/                  Home, Team, Chat, Inbox, Browsers, HiveViz, Settings
+                               (Missions/Sales/Studio files remain but have no tab)
 docs/
   feature-checklist.md         Grok Bot parity checklist with per-feature status
   product-spec.md              behaviour that must not drift, plus open questions

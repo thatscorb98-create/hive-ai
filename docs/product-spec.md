@@ -9,8 +9,8 @@ Business: **Local Reach Workshop** — a registered business with an EIN. Hive s
 ## Agents
 
 - **Lead (primary)** — the human's single point of contact and the company's boss. It starts alone, decides what to sell and who to hire, and is expected to build the whole company: marketing, research, sales, product, showcase and a proofreader. It is judged on sales made.
-- **Showcase** — makes customer-facing samples of what the company sells, so a buyer can judge the work before paying. Samples are proofread and shown in Business.
-- **Specialists** — created by the lead (or any bot) with `hire_agent`, or by the human in Agents. Each has a persistent role, tool set and memory. Roles are data, not code: hiring a new role does not require an app update.
+- **Showcase** — makes customer-facing samples of what the company sells, so a buyer can judge the work before paying. Samples are proofread and appear in Home's RECENT WORK strip.
+- **Specialists** — created by the lead (or any bot) with `hire_agent`, or by the human in the Team screen (reachable from Home or Chat). Each has a persistent role, tool set and memory. Roles are data, not code: hiring a new role does not require an app update.
 - Hiring persists. A bot hired for a job survives restarts and keeps its memory.
 - **Deleting a bot** removes the bot, its memory and its automations. Its past messages stay in the chat as history. Deleting the last bot starts a fresh lead so the company keeps running.
 - One-time upgrade: the old auto-hired trio collapses to the lead, which then builds the team it actually needs.
@@ -30,11 +30,11 @@ Android shares one cookie jar across WebViews, and one window is mounted at a ti
 
 ## Collaboration
 
-- One **team chat** where all agents post and the human can address a specific bot.
-- **Agent-to-agent DMs**: a directed channel so two bots can coordinate without spamming the human.
-- Handoff = a task moves from one bot to another with context attached.
-- A human message is a **work order**, not just a chat reply: the bot keeps its tools during the turn.
-- **Hive deck**: a pseudo-3D command deck — tilted orbit, depth-scaled bots, glowing packets travelling between sender and recipient, and a list of exactly what every bot is running. Tap a bot to trace only its traffic. It is a view of real messages and tasks, not decoration.
+- **Five tabs only**: Home, Chat, Browsers, Email, Settings. Business, Studio and Agents are not tabs.
+- **Company chat**: a left rail of bot blobs plus Company; selecting a bot shows its direct messages and handoffs as well as its broadcasts. Bubbles are iMessage-dark, with timestamps, a working bar and copyable code blocks.
+- **Agent-to-agent DMs** and **handoffs** are real messages visible in both participants' threads, so the human can peer into a working conversation.
+- A human message is a **work order**, not just a chat reply: the bot keeps its tools during the turn. In the Company thread the message goes to the lead; selecting a bot addresses that bot.
+- **Hive Station**: a 2.5D station cutaway inspired by StarNet's idea that the layout is the runtime. Rooms are departments, hallways are handoff lanes, bots sit at workstations, and moving packets are real messages. Tap a room to isolate it. It is a projection of tasks and messages, not decoration.
 
 ## Company loop
 
@@ -57,10 +57,10 @@ Android shares one cookie jar across WebViews, and one window is mounted at a ti
 - Pipeline states: `new → qualified → pitched → negotiating → won/lost`, with `paid` and `delivered` flags on each lead.
 - Sales bots research real businesses with `search_web` and `fetch_page`, add them in bulk with `add_leads`, contact them with `send_email`, and record payments with `record_sale`.
 - After payment the work still has to be done: the bot saves the finished work and marks the job closed with `deliver_work`. A paid, undelivered customer is the loop's first priority.
-- **Progress is measured by sales made** and money collected. Home and Business show those numbers first.
+- **Progress is measured by sales made** and money collected. Home shows those numbers first.
 - **Stripe links are created only when a buyer is ready to pay** — at the moment of the ask, for that specific job and amount. No pre-generated link inventory, no reuse across customers.
 - Every link creation shows an approval card with amount, currency, description and customer. Human approves; the link is then sent.
-- The Business tab is read-only: bots add products and leads. The human can advance a lead or create a link for a ready buyer.
+- There is no Business tab. Bots add products, services and leads on demand; the human can advance a lead or create a link for a ready buyer through the crew tools.
 - Invoices/contracts carry the Local Reach Workshop identity.
 
 ## Proofreading
@@ -75,8 +75,8 @@ Android shares one cookie jar across WebViews, and one window is mounted at a ti
 - On by default. While the app process is alive the company loops: run a shift, wait 45 seconds, run the next. WorkManager adds a 15-minute shift in the background.
 - Each shift picks up an existing planned/running mission or creates the next funnel stage with `nextCompanyMission`.
 - A shift where every task fails waits five minutes before the next attempt.
-- Autopilot never bypasses a payment approval. Email approval is the owner's switch; when off, the proofreader still runs.
 - Turning autopilot off cancels the foreground loop and the scheduled work; manual shifts remain available.
+- Autopilot never bypasses a payment approval. Email approval is the owner's switch; when off, the proofreader still runs.
 
 ## Suggestion box
 
@@ -85,7 +85,8 @@ Agents notice friction (a tool that keeps failing, a missing screen, a repeated 
 ## Models
 
 - NVIDIA hosted API (`https://integrate.api.nvidia.com/v1`), free-tier first.
-- Model ids referenced in 2.9.0: `nvidia/nemotron-3.5-lightning-30b-a3b`, `nvidia/nemotron-3-super-120b-a12b`, `nvidia/nemotron-3-ultra-550b-a55b`, `deepseek-ai/deepseek-v4.1-flash`.
+- Current defaults: `nvidia/nemotron-3.5-lightning-30b-a3b`, `nvidia/nemotron-3-super-120b-a12b`, `deepseek-ai/deepseek-v4-flash`.
+- NVIDIA retires ids without notice. `NimClient` reads `/v1/models`, migrates saved ids (including the retired `deepseek-ai/deepseek-v4.1-flash`), falls back to a live model on 404/410, and throws `NimException` instead of returning error text as bot content.
 - Default = the cheapest model that can do the job; escalate per task, not per user.
 - `ModelRouter` picks per role; the owner can turn routing off or pin a model per bot.
 - No paid fallback without an explicit setting.

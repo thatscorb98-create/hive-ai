@@ -2,7 +2,7 @@
 
 Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs at `docs.x.ai/grok-bot`.
 
-> **Status meaning (updated for v2.12.0):** ✅ = implemented in `app/` and builds,
+> **Status meaning (updated for v2.13.0):** ✅ = implemented in `app/` and builds,
 > 🟡 = partially implemented, ⬜ = not started. Earlier versions of this file described the
 > shipped APK; the statuses below describe the code in this repository.
 
@@ -16,7 +16,7 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 | 1.4 | The primary bot creates bots with a role, and they persist | `hire_agent` tool + `TeamEngine.hire` | ✅ |
 | 1.5 | Pin, sections, hide/unhide | — | ⬜ |
 | 1.6 | Duplicate a bot without memory | — | ⬜ |
-| 1.7 | Delete a bot and its memory | Agents → Delete; memory and automations removed | ✅ |
+| 1.7 | Delete a bot and its memory | Team screen from Home/Chat; memory and automations removed | ✅ |
 | 1.8 | Share/import bot templates | — | ⬜ |
 | 1.9 | Start with one lead, not a pre-made trio | `TeamEngine.bootstrap` + one-time migration | ✅ |
 
@@ -80,13 +80,14 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 
 | # | Grok Bot behaviour | Hive AI | Status |
 |---|---|---|---|
-| 7.1 | Chat is the interface | `ChatScreen` | ✅ |
-| 7.2 | Group chat with several bots | one shared thread, all bots post | ✅ |
-| 7.3 | Bots DM each other, hand off work | `MessageKind.DM` / `HANDOFF`, `message_teammate` tool | ✅ |
+| 7.1 | Chat is the interface | `ChatScreen`: left rail of bot blobs + Company, iMessage-dark bubbles, code blocks | ✅ |
+| 7.2 | Group chat with several bots | Company thread plus per-bot threads; all bots post | ✅ |
+| 7.3 | Bots DM each other, hand off work | `MessageKind.DM` / `HANDOFF`, `message_teammate`; visible in both participants' threads | ✅ |
 | 7.4 | Voice in / voice out | — | ⬜ |
 | 7.5 | Sync across devices | local only | ⬜ |
-| 7.6 | **3D team view** (Hive-specific) | `HiveVizScreen` hive deck: message packets + work distribution | ✅ |
+| 7.6 | **3D team view** (Hive-specific) | `HiveVizScreen` station cutaway: rooms, hallways, packets, work distribution | ✅ |
 | 7.7 | Tell a bot to add something and it does | `TeamEngine.converse` runs tools during the reply | ✅ |
+| 7.8 | Bots keep working while the human watches | continuous loop + visible handoffs; local crew fallback if hiring fails | ✅ |
 
 ## 8. Skills and routines
 
@@ -103,32 +104,34 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 | # | Grok Bot behaviour | Hive AI | Status |
 |---|---|---|---|
 | 9.1 | Shared file workspace | deliverables and products in state | 🟡 |
-| 9.2 | Deliverables attached to chat | shown in mission + studio | ✅ |
+| 9.2 | Deliverables attached to chat | shown in Home RECENT WORK; mission state | 🟡 |
 | 9.3 | Build sites, graphics, copy, digital goods | `create_product` + model-driven deliverables | 🟡 |
 | 9.4 | No AI slop leaves the building | `Proofreader` on email, products, samples and COPY | ✅ |
-| 9.5 | Customer-facing samples of the work | `create_sample` + Showcase + Business SAMPLES | ✅ |
+| 9.5 | Customer-facing samples of the work | `create_sample` + Showcase + Home RECENT WORK | ✅ |
 
 ## 10. Business operations
 
 | # | Requirement | Hive AI | Status |
 |---|---|---|---|
 | 10.1 | Per-agent email address for leads | `AgentMailApi` | ✅ |
-| 10.2 | In-app per-agent inbox + sent viewer | `InboxScreen` | ✅ |
+| 10.2 | In-app per-agent inbox + sent viewer | Email tab (`InboxScreen`) | ✅ |
 | 10.3 | Stripe link only when a buyer is ready | approval-gated, on demand | ✅ |
-| 10.4 | Pipeline lead → qualify → pitch → close | `SalesScreen` + `Prospect` | ✅ |
+| 10.4 | Pipeline lead → qualify → pitch → close | `Prospect` + bot tools; no separate sales tab | 🟡 |
 | 10.5 | Business identity (Local Reach Workshop, EIN) on documents | settings fields, not yet on PDFs | 🟡 |
 | 10.6 | Suggestion box that outputs a coding-agent prompt | `SuggestionBox` + copy button | ✅ |
-| 10.7 | Products with a checkout per product | `create_product`, `create_checkout`, Business screen | ✅ |
+| 10.7 | Products with a checkout per product | `create_product`, `create_checkout`; products on demand, no Business tab | ✅ |
 | 10.8 | Bots know who they work for | system prompt + seeded shared memory | ✅ |
 | 10.9 | Bots build lead lists and contact them | `add_leads`, `search_web`, `fetch_page`, `send_email` | ✅ |
-| 10.10 | Progress is read by sales made | `record_sale`, Home/Business sales count and revenue | ✅ |
-| 10.11 | Business tab is a view, not a form | products/leads added by bots; manual advance + payment link only | ✅ |
+| 10.10 | Progress is read by sales made | `record_sale`, Home sales count and revenue | ✅ |
+| 10.11 | Five tabs, no manual Business form | Home, Chat, Browsers, Email, Settings; products made by bots | ✅ |
 | 10.12 | Lead bot knows it runs Local Reach Workshop and must build teams | lead prompt + shared facts | ✅ |
 | 10.13 | Continuous loop researches, sells, collects and delivers | `HiveViewModel.startLoop` + `nextCompanyMission` | ✅ |
 | 10.14 | Paid work is delivered before new leads | `Prospect.paid/delivered`, `deliver_work` | ✅ |
-| 10.15 | Customer samples made by a showcase bot | `create_sample`, Showcase role, Business SAMPLES | ✅ |
-| 10.16 | Live view of messages and work distribution | `HiveVizScreen` hive deck, tap to trace | ✅ |
-| 10.17 | Tasks run at the same time, not one at a time | `TeamEngine.runMission` parallel dispatch | ✅ |
+| 10.15 | Customer samples made by a showcase bot | `create_sample`, Showcase role, Home RECENT WORK | ✅ |
+| 10.16 | Live view of messages and work distribution | `HiveVizScreen` station cutaway, tap a room | ✅ |
+| 10.17 | Model failures are visible, not fake successes | `NimException`, live `/v1/models`, 404/410 fallback, failed task/shift | ✅ |
+| 10.18 | Company does not stay stuck at one bot | `ensureCoreTeam` local crew fallback | ✅ |
+| 10.19 | Tasks run at the same time, not one at a time | `TeamEngine.runMission` parallel dispatch | ✅ |
 
 ## 11. Platform and model
 
