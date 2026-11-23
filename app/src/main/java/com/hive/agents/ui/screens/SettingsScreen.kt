@@ -50,6 +50,8 @@ fun SettingsScreen(
     var mailInbox by remember(keys) { mutableStateOf(keys.agentMailInbox) }
     var stripeKey by remember(keys) { mutableStateOf(keys.stripeSecretKey) }
     var github by remember(keys) { mutableStateOf(keys.githubToken) }
+    var storageUrl by remember(keys) { mutableStateOf(keys.storageUrl) }
+    var storageKey by remember(keys) { mutableStateOf(keys.storageKey) }
     var business by remember(state.settings) { mutableStateOf(state.settings.businessName) }
     var ein by remember(state.settings) { mutableStateOf(state.settings.businessEin) }
     var goal by remember(state.settings) { mutableStateOf(state.settings.goal) }
@@ -60,7 +62,7 @@ fun SettingsScreen(
         item {
             Text("Setup", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text(
-                "Keys are encrypted on this device in hive-secrets.json and survive app updates.",
+                "Keys are encrypted on this device in hive-secrets.json, with a backup copy, and survive an in-place app update.",
                 fontSize = 11.sp,
                 color = TextDim
             )
@@ -83,6 +85,10 @@ fun SettingsScreen(
             LabeledField("Stripe secret key", stripeKey, secret = true) { stripeKey = it }
             Spacer(Modifier.height(6.dp))
             LabeledField("GitHub token", github, secret = true) { github = it }
+            Spacer(Modifier.height(6.dp))
+            LabeledField("Storage URL", storageUrl) { storageUrl = it }
+            Spacer(Modifier.height(6.dp))
+            LabeledField("Storage key", storageKey, secret = true) { storageKey = it }
             Spacer(Modifier.height(8.dp))
             Button(onClick = {
                 onSaveKeys(
@@ -91,10 +97,19 @@ fun SettingsScreen(
                         agentMailApiKey = mailKey.trim(),
                         agentMailInbox = mailInbox.trim(),
                         stripeSecretKey = stripeKey.trim(),
-                        githubToken = github.trim()
+                        githubToken = github.trim(),
+                        storageUrl = storageUrl.trim(),
+                        storageKey = storageKey.trim()
                     )
                 )
             }) { Text("Save keys") }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Uninstalling the app, or installing a build signed with a different key, clears this folder. " +
+                    "Keep a copy of the keys somewhere safe.",
+                fontSize = 10.sp,
+                color = TextDim
+            )
         }
 
         item {
@@ -111,7 +126,7 @@ fun SettingsScreen(
         }
 
         item {
-            SectionHeader("BUSINESS", "every bot is told who it works for")
+            SectionHeader("BUSINESS", "every bot is told who it works for; this profile is saved on this device")
             LabeledField("Business name", business) { business = it }
             Spacer(Modifier.height(6.dp))
             LabeledField("EIN", ein) { ein = it }
@@ -126,22 +141,27 @@ fun SettingsScreen(
         }
 
         item {
-            SectionHeader("AUTOPILOT", "background shifts every 15 minutes while the phone has network")
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-            ) {
-                Text(
-                    if (state.settings.autopilot) "Running shifts automatically" else "Off - only manual shifts",
-                    fontSize = 12.sp,
-                    color = TextDim
-                )
-                androidx.compose.material3.Switch(
-                    checked = state.settings.autopilot,
-                    onCheckedChange = { onAutopilot(it) }
-                )
-            }
+            SectionHeader("AUTOPILOT", "shifts start when you open the app, then every 15 minutes in the background")
+            ToggleRow(
+                label = if (state.settings.autopilot) "Running shifts automatically" else "Off - only manual shifts",
+                checked = state.settings.autopilot,
+                onChange = onAutopilot
+            )
+            ToggleRow(
+                label = "Proofread every email and product description before it goes out",
+                checked = state.settings.proofreadOutbound,
+                onChange = { onSaveSettings(state.settings.copy(proofreadOutbound = it)) }
+            )
+            ToggleRow(
+                label = "Ask me before a bot sends email",
+                checked = state.settings.requireApprovalForEmail,
+                onChange = { onSaveSettings(state.settings.copy(requireApprovalForEmail = it)) }
+            )
+            Text(
+                "Payment links always need your approval. Every email and product description is proofread before it goes out.",
+                fontSize = 10.sp,
+                color = TextDim
+            )
         }
 
         item {
@@ -160,5 +180,17 @@ fun SettingsScreen(
                 Text(entry.text, fontSize = 12.sp)
             }
         }
+    }
+}
+
+@Composable
+private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+    ) {
+        Text(label, fontSize = 12.sp, color = TextDim, modifier = Modifier.weight(1f))
+        androidx.compose.material3.Switch(checked = checked, onCheckedChange = onChange)
     }
 }

@@ -9,13 +9,20 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
@@ -59,6 +66,7 @@ class AgentBrowserActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         val agentId = intent.getStringExtra(EXTRA_AGENT_ID).orEmpty()
         val agentName = intent.getStringExtra(EXTRA_AGENT_NAME).orEmpty()
         val url = intent.getStringExtra(EXTRA_URL).orEmpty()
@@ -113,6 +121,11 @@ private fun BrowserScreen(
             settings.loadWithOverviewMode = true
             settings.useWideViewPort = true
             settings.setSupportMultipleWindows(false)
+            settings.setSupportZoom(true)
+            settings.builtInZoomControls = true
+            settings.displayZoomControls = false
+            settings.textZoom = 100
+            setBackgroundColor(android.graphics.Color.WHITE)
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
             webViewClient = object : WebViewClient() {
@@ -162,15 +175,17 @@ private fun BrowserScreen(
         webView.loadUrl(next)
     }
 
-    Column(Modifier.fillMaxSize().background(Ink)) {
+    // Edge-to-edge with safe drawing insets, so the chrome and the page fit the visible screen
+    // instead of sliding under the status bar and the navigation bar.
+    Column(Modifier.fillMaxSize().background(Ink).safeDrawingPadding().imePadding()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Column(Modifier.weight(1f)) {
-                Text("$agentName's browser", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Amber)
+                Text("$agentName's browser", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Amber)
                 Text(
-                    "You are in control. Sign in or finish any step, then hand it back so the bot can continue.",
+                    "You are in control - sign in, then hand it back.",
                     fontSize = 10.sp,
                     color = TextDim
                 )
@@ -198,7 +213,9 @@ private fun BrowserScreen(
         }
 
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            Modifier.fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             TextButton(onClick = { if (webView.canGoBack()) webView.goBack() }) { Text("< Back", fontSize = 11.sp) }
