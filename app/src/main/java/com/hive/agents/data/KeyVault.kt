@@ -33,20 +33,31 @@ data class VaultKeys(
 /**
  * Stores API keys encrypted with a hardware-backed Android Keystore key.
  *
- * Deliberately its own file (`hive-secrets.json`) with its own atomic write, so a damaged
- * or half-written state file can never blank the setup. Keys live outside the APK, so an
- * in-place update keeps them as long as the signing key is unchanged.
+ * Deliberately its own file (`hive-secrets.json`) with its own atomic write and a backup copy,
+ * so a damaged or half-written state file can never blank the setup. Keys live outside the APK,
+ * so an in-place update keeps them as long as the signing key is unchanged.
  */
 class KeyVault(context: Context) {
 
     private val file = File(context.filesDir, "hive-secrets.json")
+    private val backup = File(context.filesDir, "hive-secrets.bak")
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     @Synchronized
-    fun load(): VaultKeys = runCatching {
-        if (!file.exists()) return VaultKeys()
-        json.decodeFromString<VaultKeys>(String(decrypt(file.readBytes()), Charsets.UTF_8))
-    }.getOrElse { VaultKeys() }
+    fun load(): VaultKeys {
+        decode(file)?.let { return it }
+        decode(backup)?.let { restored ->
+            runCatching { file.writeBytes(backup.readBytes()) }
+            return restored
+        }
+        return VaultKeys()
+    }
+
+    /** Missing fields fall back to their defaults, so an update never blanks older keys. */
+    private fun decode(source: File): VaultKeys? = runCatching {
+        if (!source.exists()) return null
+        json.decodeFromString<VaultKeys>(String(decrypt(source.readBytes()), Charsets.UTF_8))
+    }.getOrNull()
 
     @Synchronized
     fun save(keys: VaultKeys) {
@@ -58,11 +69,14 @@ class KeyVault(context: Context) {
             file.delete()
             tmp.renameTo(file)
         }
+        // A second copy survives a corrupted main file after an interrupted write.
+        runCatching { backup.writeBytes(encrypted) }
     }
 
     @Synchronized
     fun clear() {
         file.delete()
+        backup.delete()
     }
 
     /** Diagnostics for the settings screen: does the device keystore hold a usable key? */

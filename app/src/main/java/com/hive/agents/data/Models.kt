@@ -21,7 +21,7 @@ enum class DeliverableKind { WEBSITE, IMAGE, COPY, DOCUMENT, CODE, OTHER }
 @Serializable
 enum class ProspectStage { NEW, QUALIFIED, PITCHED, NEGOTIATING, WON, LOST }
 
-/** A durable teammate. Hired by the orchestrator or by the human, and it keeps its memory. */
+/** A durable teammate. Hired by the lead bot or by the human, and it keeps its memory. */
 @Serializable
 data class Agent(
     val id: String = UUID.randomUUID().toString(),
@@ -202,11 +202,18 @@ data class Settings(
     val fromName: String = "Local Reach Workshop",
     val model: String = Models.DEFAULT,
     val autoApproveLowRisk: Boolean = true,
-    val requireApprovalForEmail: Boolean = true,
+    /** Outreach runs on its own unless the human turns this on. */
+    val requireApprovalForEmail: Boolean = false,
     val requireApprovalForPayment: Boolean = true,
     val currency: String = "usd",
     val goal: String = "Sell digital goods and AI-run services for Local Reach Workshop",
-    val autopilot: Boolean = false,
+    val autopilot: Boolean = true,
+    /** The company runs a shift when the app opens and every 15 minutes after that. */
+    val autopilotDefaulted: Boolean = false,
+    /** One-time upgrade of the old auto-hired trio into a single lead who builds the team. */
+    val teamCleaned: Boolean = false,
+    val proofreadOutbound: Boolean = true,
+    val lastShiftAt: Long = 0L,
     val buyingGuide: String = "Digital goods, AI-run services, websites, graphics, copy and automation for local businesses."
 )
 
@@ -229,6 +236,10 @@ data class HiveState(
 ) {
     val orchestrator: Agent? get() = agents.firstOrNull { it.primary } ?: agents.firstOrNull()
     fun agent(id: String): Agent? = agents.firstOrNull { it.id == id }
+
+    /** Progress is measured by money actually made, not by how busy the bots look. */
+    val salesMade: Int get() = prospects.count { it.stage == ProspectStage.WON }
+    val revenueCents: Long get() = prospects.filter { it.stage == ProspectStage.WON }.sumOf { it.valueCents }
 }
 
 /** Model ids available on the free NVIDIA endpoint. */
