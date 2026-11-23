@@ -2,13 +2,14 @@
 
 ## What it is
 
-Hive AI is an Android app where a team of AI agents runs a service business. The company starts with **one lead bot**. That lead knows it runs **Local Reach Workshop**, hires the marketing, research, sales, product and proofreading people it needs, and keeps the company moving while the human watches the chat and approves anything that needs a human.
+Hive AI is an Android app where a team of AI agents runs a service business. The company starts with **one lead bot**. That lead knows it runs **Local Reach Workshop**, hires the marketing, research, sales, product, showcase and proofreading people it needs, and keeps the company moving while the human watches the chat and approves anything that needs a human.
 
 Business: **Local Reach Workshop** — a registered business with an EIN. Hive ships work under that name.
 
 ## Agents
 
-- **Lead (primary)** — the human's single point of contact and the company's boss. It starts alone, decides what to sell and who to hire, and is expected to build the whole company: marketing, research, sales, product and a proofreader. It is judged on sales made.
+- **Lead (primary)** — the human's single point of contact and the company's boss. It starts alone, decides what to sell and who to hire, and is expected to build the whole company: marketing, research, sales, product, showcase and a proofreader. It is judged on sales made.
+- **Showcase** — makes customer-facing samples of what the company sells, so a buyer can judge the work before paying. Samples are proofread and shown in Business.
 - **Specialists** — created by the lead (or any bot) with `hire_agent`, or by the human in Agents. Each has a persistent role, tool set and memory. Roles are data, not code: hiring a new role does not require an app update.
 - Hiring persists. A bot hired for a job survives restarts and keeps its memory.
 - **Deleting a bot** removes the bot, its memory and its automations. Its past messages stay in the chat as history. Deleting the last bot starts a fresh lead so the company keeps running.
@@ -33,7 +34,15 @@ Android shares one cookie jar across WebViews, and one window is mounted at a ti
 - **Agent-to-agent DMs**: a directed channel so two bots can coordinate without spamming the human.
 - Handoff = a task moves from one bot to another with context attached.
 - A human message is a **work order**, not just a chat reply: the bot keeps its tools during the turn.
-- **3D view**: a live graph of the team — nodes are bots, edges light up when they message or hand off, and the lead sits at the centre.
+- **Hive deck**: a pseudo-3D command deck — tilted orbit, depth-scaled bots, glowing packets travelling between sender and recipient, and a list of exactly what every bot is running. Tap a bot to trace only its traffic. It is a view of real messages and tasks, not decoration.
+
+## Company loop
+
+- Autopilot is a loop, not one shift. While the app process is alive and Autopilot is on, the team runs a shift, waits 45 seconds and runs the next one. WorkManager adds a 15-minute shift in the background.
+- Each loop picks the next funnel stage instead of inventing work: deliver paid work → research missing contacts → create an offer → make samples → contact qualified leads → follow up and close → find new leads.
+- A shift that fails every task backs off for five minutes instead of burning credits in a hot loop.
+- The team works in parallel: all planned tasks are dispatched at once. Approval dialogs are serialized; the API calls after them are not.
+- Each bot routes to a model by role: lead and product use Super, research/sales/marketing/showcase use Lightning, the proofreader uses DeepSeek. A bot-level override and a Setup switch are available.
 
 ## Memory and mistakes
 
@@ -45,8 +54,9 @@ Android shares one cookie jar across WebViews, and one window is mounted at a ti
 
 ## Sales and money
 
-- Pipeline states: `new → qualified → pitched → negotiating → won/lost`.
-- Sales bots research real businesses with `search_web` and `fetch_page`, add them in bulk with `add_leads`, contact them with `send_email`, and record closings with `record_sale`.
+- Pipeline states: `new → qualified → pitched → negotiating → won/lost`, with `paid` and `delivered` flags on each lead.
+- Sales bots research real businesses with `search_web` and `fetch_page`, add them in bulk with `add_leads`, contact them with `send_email`, and record payments with `record_sale`.
+- After payment the work still has to be done: the bot saves the finished work and marks the job closed with `deliver_work`. A paid, undelivered customer is the loop's first priority.
 - **Progress is measured by sales made** and money collected. Home and Business show those numbers first.
 - **Stripe links are created only when a buyer is ready to pay** — at the moment of the ask, for that specific job and amount. No pre-generated link inventory, no reuse across customers.
 - Every link creation shows an approval card with amount, currency, description and customer. Human approves; the link is then sent.
@@ -55,17 +65,18 @@ Android shares one cookie jar across WebViews, and one window is mounted at a ti
 
 ## Proofreading
 
-- Every outbound email, every product description and every COPY deliverable passes `agent/Proofreader` before it leaves the building.
+- Every outbound email, every product description, every customer sample and every COPY deliverable passes `agent/Proofreader` before it leaves the building.
 - The proofreader keeps facts, prices, names and links exactly; cuts AI tells and filler; never invents a client, result, guarantee or deadline.
 - It is a style-and-safety gate, not a fact-checker. Agents remain responsible for the truth of a claim.
 - The lead is told to hire a proofreader bot as part of the team. The code gate applies even before that hire.
 
 ## Autopilot
 
-- On by default. A shift starts when the app comes to the front, then every 15 minutes through WorkManager.
-- A shift picks up the oldest planned/running mission or starts one from the standing goal.
+- On by default. While the app process is alive the company loops: run a shift, wait 45 seconds, run the next. WorkManager adds a 15-minute shift in the background.
+- Each shift picks up an existing planned/running mission or creates the next funnel stage with `nextCompanyMission`.
+- A shift where every task fails waits five minutes before the next attempt.
 - Autopilot never bypasses a payment approval. Email approval is the owner's switch; when off, the proofreader still runs.
-- Turning autopilot off stops the scheduled work; manual shifts remain available.
+- Turning autopilot off cancels the foreground loop and the scheduled work; manual shifts remain available.
 
 ## Suggestion box
 
@@ -76,6 +87,7 @@ Agents notice friction (a tool that keeps failing, a missing screen, a repeated 
 - NVIDIA hosted API (`https://integrate.api.nvidia.com/v1`), free-tier first.
 - Model ids referenced in 2.9.0: `nvidia/nemotron-3.5-lightning-30b-a3b`, `nvidia/nemotron-3-super-120b-a12b`, `nvidia/nemotron-3-ultra-550b-a55b`, `deepseek-ai/deepseek-v4.1-flash`.
 - Default = the cheapest model that can do the job; escalate per task, not per user.
+- `ModelRouter` picks per role; the owner can turn routing off or pin a model per bot.
 - No paid fallback without an explicit setting.
 
 ## Keys and updates
@@ -92,4 +104,3 @@ Agents notice friction (a tool that keeps failing, a missing screen, a repeated 
 3. AgentMail account: how many inboxes/domains are available?
 4. Stripe: live or test, and does Local Reach Workshop have a verified account?
 5. Do agents email from one shared domain (`agent@localreachworkshop.com`) or per-agent subaddresses?
-6. Where does the 3D view get its state — local store or a server?

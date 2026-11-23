@@ -2,7 +2,7 @@
 
 Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs at `docs.x.ai/grok-bot`.
 
-> **Status meaning (updated for v2.11.0):** ✅ = implemented in `app/` and builds,
+> **Status meaning (updated for v2.12.0):** ✅ = implemented in `app/` and builds,
 > 🟡 = partially implemented, ⬜ = not started. Earlier versions of this file described the
 > shipped APK; the statuses below describe the code in this repository.
 
@@ -37,7 +37,7 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 | # | Grok Bot behaviour | Hive AI | Status |
 |---|---|---|---|
 | 3.1 | Persistent computer: browser + terminal + files | `AgentBrowserActivity` gives each bot a real WebView window | 🟡 |
-| 3.2 | Each bot its own screen, parallel work | one window per bot, listed in the Browsers tab | ✅ |
+| 3.2 | Each bot its own screen, parallel work | one window per bot, listed in the Browsers tab | 🟡 |
 | 3.3 | Sessions and logins persist | cookies persist app-wide; window history is per bot | 🟡 |
 | 3.4 | Hand over for SSO/passkey/CAPTCHA/2FA | the human takes the same window, then the bot continues | ✅ |
 | 3.5 | Read one-time codes from the bot's inbox | inbox exists, no agent wiring | 🟡 |
@@ -85,7 +85,7 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 | 7.3 | Bots DM each other, hand off work | `MessageKind.DM` / `HANDOFF`, `message_teammate` tool | ✅ |
 | 7.4 | Voice in / voice out | — | ⬜ |
 | 7.5 | Sync across devices | local only | ⬜ |
-| 7.6 | **3D team view** (Hive-specific) | `HiveVizScreen` animated graph | ✅ |
+| 7.6 | **3D team view** (Hive-specific) | `HiveVizScreen` hive deck: message packets + work distribution | ✅ |
 | 7.7 | Tell a bot to add something and it does | `TeamEngine.converse` runs tools during the reply | ✅ |
 
 ## 8. Skills and routines
@@ -96,7 +96,7 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 | 8.2 | Prompt skills, tested before scheduling | missions act as one-shot runs | 🟡 |
 | 8.3 | Scheduled / event routines | `AutopilotWorker` every 15 min from the standing goal | ✅ |
 | 8.4 | Pause a routine | autopilot switch in Setup | ✅ |
-| 8.5 | Start working when the app opens | `HiveViewModel.onAppForeground` | ✅ |
+| 8.5 | Start working when the app opens | `HiveViewModel.onAppForeground` starts the continuous loop | ✅ |
 
 ## 9. Deliverables
 
@@ -105,7 +105,8 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 | 9.1 | Shared file workspace | deliverables and products in state | 🟡 |
 | 9.2 | Deliverables attached to chat | shown in mission + studio | ✅ |
 | 9.3 | Build sites, graphics, copy, digital goods | `create_product` + model-driven deliverables | 🟡 |
-| 9.4 | No AI slop leaves the building | `Proofreader` on email, products and COPY | ✅ |
+| 9.4 | No AI slop leaves the building | `Proofreader` on email, products, samples and COPY | ✅ |
+| 9.5 | Customer-facing samples of the work | `create_sample` + Showcase + Business SAMPLES | ✅ |
 
 ## 10. Business operations
 
@@ -123,15 +124,22 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 | 10.10 | Progress is read by sales made | `record_sale`, Home/Business sales count and revenue | ✅ |
 | 10.11 | Business tab is a view, not a form | products/leads added by bots; manual advance + payment link only | ✅ |
 | 10.12 | Lead bot knows it runs Local Reach Workshop and must build teams | lead prompt + shared facts | ✅ |
+| 10.13 | Continuous loop researches, sells, collects and delivers | `HiveViewModel.startLoop` + `nextCompanyMission` | ✅ |
+| 10.14 | Paid work is delivered before new leads | `Prospect.paid/delivered`, `deliver_work` | ✅ |
+| 10.15 | Customer samples made by a showcase bot | `create_sample`, Showcase role, Business SAMPLES | ✅ |
+| 10.16 | Live view of messages and work distribution | `HiveVizScreen` hive deck, tap to trace | ✅ |
+| 10.17 | Tasks run at the same time, not one at a time | `TeamEngine.runMission` parallel dispatch | ✅ |
 
 ## 11. Platform and model
 
 | # | Grok Bot behaviour | Hive AI | Status |
 |---|---|---|---|
 | 11.1 | Phone + desktop | Android 9+ | ✅ |
-| 11.2 | Automatic model choice | explicit NVIDIA picker | ✅ |
+| 11.2 | Model choice | picker + per-role routing | ✅ |
 | 11.3 | 38 languages | English | ⬜ |
 | 11.4 | Usage metering | — | ⬜ |
+| 11.5 | Different model per role | `ModelRouter` + `Settings.routeModels` | ✅ |
+| 11.6 | Live pipeline in every bot prompt | `TeamEngine.pipelineSnapshot` | ✅ |
 
 ## 12. Keys survive updates
 
@@ -149,3 +157,4 @@ Research target: **Grok Bot** (xAI, out of beta Nov 2026) — `x.ai/bot`, docs a
 3. Per-bot cookie isolation (3.3) — currently one cookie jar for the app.
 4. MCP connectors (4.2) and voice (7.4).
 5. Runtime verification on a device or emulator; nothing has been run yet.
+6. A daily API budget for the continuous loop (11.4), so autopilot cannot spend without a cap.
