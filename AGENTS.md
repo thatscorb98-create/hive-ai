@@ -35,7 +35,7 @@ You are working on an Android app that autonomous agents use to run a real busin
 - `AGENT_README.md`, `CHANGELOG.md` and the README status table are updated in the same version.
 - Commit message: `feat|fix|chore(scope): summary`, body explains why.
 
-## This version's invariants (2.13.3)
+## This version's invariants (2.13.4)
 
 - `TeamEngine.runMission` dispatches tasks **in parallel** (`coroutineScope` + `async`) inside each wave. Do not turn it back into a sequential loop; the owner asked for simultaneous API work.
 - **A shift never collapses into one task for one bot.** `planTasks` falls back to `rosterPlan` (stage-relevant specialists + least-recently-used fill + the boss's coordination job) and `mergePlan` tops up partial model plans. `MAX_TASKS = 5` per shift. An unmatched JSON role must never be dumped on the first specialist.
@@ -53,7 +53,11 @@ You are working on an Android app that autonomous agents use to run a real busin
 - **Tool calls stay real tool calls.** Echo the assistant's `tool_calls` and answer each one with `role: "tool"` plus its `tool_call_id`. Never replace the call with "Calling tools." or send the result as a user message; the model loses track of which call finished and repeats it.
 - **Reasoning models need room.** Keep the planner at 3,000 tokens and tool calls at 8,192 or more. An empty 200 response must retry at twice the budget, then on another live model; it must never become bot content.
 - **A search challenge is not "no results."** `search_web` tries DuckDuckGo, then Bing RSS, and returns titles, links and snippets. Keep the city/region hint for local lead research.
-- **`HiveStore.update` caps history.** 600 messages, 400 tasks, 800 memory entries, 200 inbox items. Pipeline, products, deliverables and paid work are never trimmed.
+- **`HiveStore.update` caps history and writes off Main.** 600 messages, 400 tasks, 800 memory entries, 200 inbox items, 200 missions (active ones kept), 300 sent mails, 100 suggestions. Pipeline, products, deliverables and paid work are never trimmed. Writes go through a single background writer; `flush()` runs on app stop.
+- **`record_sale` asks first and is the only path that marks `paid`.** `deliver_work` refuses unpaid jobs. Advancing a prospect to WON never marks paid; revenue counts paid WON deals only.
+- **Email approval defaults on.** `send_email` is capped at 5 per agent turn, with an owner blocklist. Only the lead gets the full toolset (`ToolPolicy`); other roles get the minimum for their job.
+- **Web and page content is untrusted.** `ToolRegistry` wraps it with a per-call nonce marker; `remember`/`hire_agent` right after untrusted reads require human approval. `fetch_page`/`open_website` refuse private, loopback, link-local and non-http(s) destinations.
+- **One shift at a time.** `ShiftCoordinator` serializes the loop, manual orders and the WorkManager worker. Stopping a shift marks the mission resumable and drops its queued tasks; cancellation is never swallowed by `runCatching`.
 
 ## Do not
 
