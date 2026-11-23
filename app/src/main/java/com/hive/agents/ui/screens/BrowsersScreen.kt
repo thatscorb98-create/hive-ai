@@ -21,23 +21,29 @@ import com.hive.agents.ui.BackRow
 import com.hive.agents.ui.EmptyState
 import com.hive.agents.ui.HiveCard
 import com.hive.agents.ui.Pill
+import com.hive.agents.ui.theme.Good
 import com.hive.agents.ui.theme.Teal
 import com.hive.agents.ui.theme.TextDim
 
 /**
- * Each bot has its own browser window with its own address bar and history. Open a bot's
- * browser, sign in to whatever it needs, then let the bot drive that same window with its
- * browser tools (open, read, click, type).
+ * Every bot's browser in one place. Open any bot's window to watch it work, log in yourself when
+ * a site asks, then hand the same window back. One window is live at a time: opening another bot
+ * brings that bot's window forward, and the bot keeps the page it was on.
  */
 @Composable
-fun BrowsersScreen(state: HiveState, onOpen: (String) -> Unit, onBack: () -> Unit) {
+fun BrowsersScreen(
+    state: HiveState,
+    currentAgent: String?,
+    onOpen: (String) -> Unit,
+    onBack: () -> Unit
+) {
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         item { BackRow("Home", onBack) }
 
         item {
             Text("Browsers", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text(
-                "One window per bot. Log in yourself when a site asks, and the bot keeps that session.",
+                "One window per bot. Open a bot's browser to watch it, sign in yourself, or take over.",
                 fontSize = 11.sp,
                 color = TextDim
             )
@@ -52,21 +58,28 @@ fun BrowsersScreen(state: HiveState, onOpen: (String) -> Unit, onBack: () -> Uni
         }
 
         if (state.agents.isEmpty()) {
-            item { EmptyState("No bots yet.") }
+            item { EmptyState("No bots yet. Run a shift and your lead bot will start hiring.") }
         }
 
         items(state.agents) { agent ->
-            HiveCard(accent = Teal) {
+            val live = currentAgent == agent.id
+            HiveCard(accent = if (live) Good else Teal) {
                 Row(Modifier.fillMaxWidth()) {
                     Column(Modifier.weight(1f)) {
                         Text(agent.name, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                         Text("${agent.role} - profile ${agent.profileId.take(8)}", fontSize = 10.sp, color = TextDim)
                     }
-                    Pill(if (agent.active) "ready" else "idle", Teal)
+                    Pill(if (live) "open now" else "ready", if (live) Good else Teal)
                 }
                 Spacer(Modifier.height(8.dp))
                 Row {
-                    Button(onClick = { onOpen(agent.id) }) { Text("Open browser", fontSize = 12.sp) }
+                    Button(onClick = { onOpen(agent.id) }) {
+                        Text(if (live) "Bring to front" else "Open browser", fontSize = 12.sp)
+                    }
+                }
+                if (live) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("This window is attached to ${agent.name}. Its browser tools work right now.", fontSize = 10.sp, color = TextDim)
                 }
             }
         }

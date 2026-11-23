@@ -10,14 +10,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -27,50 +22,78 @@ import com.hive.agents.data.Prospect
 import com.hive.agents.data.ProspectStage
 import com.hive.agents.ui.EmptyState
 import com.hive.agents.ui.HiveCard
-import com.hive.agents.ui.LabeledField
 import com.hive.agents.ui.Pill
 import com.hive.agents.ui.SectionHeader
 import com.hive.agents.ui.theme.Amber
 import com.hive.agents.ui.theme.Good
 import com.hive.agents.ui.theme.TextDim
 
+/**
+ * What the company is selling and who is buying. Deliberately read-only: the bots add products
+ * and leads, and the human only nudges a lead forward or creates a payment link at the moment a
+ * buyer is ready.
+ */
 @Composable
 fun SalesScreen(
     state: HiveState,
-    onAddProspect: (String, String, String) -> Unit,
     onMove: (String, ProspectStage) -> Unit,
-    onPay: (String) -> Unit,
-    onAddService: (String, String) -> Unit,
-    onAddProduct: (String, String, String) -> Unit,
-    onCheckout: (String) -> Unit
+    onPay: (String) -> Unit
 ) {
-    var company by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
-    var value by remember { mutableStateOf("") }
-    var serviceName by remember { mutableStateOf("") }
-    var servicePrice by remember { mutableStateOf("") }
-    var productName by remember { mutableStateOf("") }
-    var productPrice by remember { mutableStateOf("") }
-    var productPitch by remember { mutableStateOf("") }
-
-    val wonCents = state.prospects.filter { it.stage == ProspectStage.WON }.sumOf { it.valueCents }
+    val sales = state.salesMade
+    val collected = state.revenueCents
+    val pipelineCents = state.prospects
+        .filter { it.stage != ProspectStage.WON && it.stage != ProspectStage.LOST }
+        .sumOf { it.valueCents }
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         item {
             Column(Modifier.padding(vertical = 8.dp)) {
                 Text("Business", fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    "${state.settings.businessName} - collected $${"%.2f".format(wonCents / 100.0)}",
+                    "${state.settings.businessName} - progress is measured by sales made.",
                     fontSize = 11.sp,
                     color = TextDim
                 )
             }
         }
 
-        item { SectionHeader("DIGITAL PRODUCTS", "what the bots sell, with a Stripe checkout when a buyer is ready") }
+        item {
+            HiveCard(accent = Good) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                    Column {
+                        Text("$sales", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Good)
+                        Text("sales made", fontSize = 11.sp, color = TextDim)
+                    }
+                    Column {
+                        Text(
+                            "$${"%.2f".format(collected / 100.0)}",
+                            fontSize = 26.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Amber
+                        )
+                        Text("collected", fontSize = 11.sp, color = TextDim)
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Pipeline $${"%.2f".format(pipelineCents / 100.0)} across ${state.prospects.size} leads",
+                    fontSize = 11.sp,
+                    color = TextDim
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Tell your lead bot what to add in Chat. The team builds products and lead lists; " +
+                        "a Stripe link is only created when a buyer is ready to pay.",
+                    fontSize = 10.sp,
+                    color = TextDim
+                )
+            }
+        }
+
+        item { SectionHeader("DIGITAL PRODUCTS", "what the bots sell") }
 
         if (state.products.isEmpty()) {
-            item { EmptyState("No products yet. A bot can create one with the create_product tool.") }
+            item { EmptyState("No products yet. Ask a bot to create one.") }
         }
 
         items(state.products) { product ->
@@ -86,31 +109,13 @@ fun SalesScreen(
                 if (product.checkoutUrl.isNotBlank()) {
                     Text(product.checkoutUrl, fontSize = 10.sp, color = TextDim)
                 }
-                Spacer(Modifier.height(6.dp))
-                TextButton(onClick = { onCheckout(product.id) }) {
-                    Text("Create checkout link", fontSize = 11.sp, color = Amber)
-                }
             }
-        }
-
-        item {
-            SectionHeader("ADD PRODUCT", "a digital good or an AI-run service")
-            LabeledField("Name", productName) { productName = it }
-            Spacer(Modifier.height(6.dp))
-            LabeledField("What the buyer gets", productPitch) { productPitch = it }
-            Spacer(Modifier.height(6.dp))
-            LabeledField("Price (USD)", productPrice) { productPrice = it }
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = {
-                onAddProduct(productName, productPitch, productPrice)
-                productName = ""; productPitch = ""; productPrice = ""
-            }) { Text("Add product") }
         }
 
         item { SectionHeader("PIPELINE", "${state.prospects.size} leads") }
 
         if (state.prospects.isEmpty()) {
-            item { EmptyState("No leads yet. Add one, or let a bot qualify inbound mail.") }
+            item { EmptyState("No leads yet. Your sales bot builds the list from real businesses.") }
         }
 
         items(state.prospects) { prospect ->
@@ -119,14 +124,25 @@ fun SalesScreen(
                     Text(prospect.company, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                     Pill(prospect.stage.name.lowercase(), stageColor(prospect))
                 }
-                if (prospect.email.isNotBlank()) {
-                    Text(prospect.email, fontSize = 11.sp, color = TextDim)
+                if (prospect.contactName.isNotBlank() || prospect.email.isNotBlank()) {
+                    Text(
+                        listOf(prospect.contactName, prospect.email).filter { it.isNotBlank() }.joinToString(" - "),
+                        fontSize = 11.sp,
+                        color = TextDim
+                    )
                 }
                 Text(
                     if (prospect.valueCents > 0) "$${"%.2f".format(prospect.valueCents / 100.0)}" else "no value set",
                     fontSize = 12.sp,
                     color = TextDim
                 )
+                if (prospect.notes.isNotBlank()) {
+                    Text(prospect.notes.take(160), fontSize = 11.sp, color = TextDim)
+                }
+                val owner = state.agent(prospect.ownerAgentId)?.name
+                if (owner != null) {
+                    Text("owner: $owner", fontSize = 10.sp, color = TextDim)
+                }
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     TextButton(onClick = { onMove(prospect.id, nextStage(prospect.stage)) }) {
@@ -140,23 +156,9 @@ fun SalesScreen(
         }
 
         item {
-            SectionHeader("NEW LEAD", "company and an optional deal value")
-            LabeledField("Company", company) { company = it }
-            Spacer(Modifier.height(6.dp))
-            LabeledField("Email", email) { email = it }
-            Spacer(Modifier.height(6.dp))
-            LabeledField("Deal value (USD)", value) { value = it }
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = {
-                onAddProspect(company, email, value)
-                company = ""; email = ""; value = ""
-            }) { Text("Add lead") }
-        }
-
-        item {
-            SectionHeader("SERVICES", "what else the business sells")
+            SectionHeader("SERVICES", "AI-run services the team delivers")
             if (state.services.isEmpty()) {
-                EmptyState("No services listed.")
+                EmptyState("No services listed yet.")
             }
             state.services.forEach { service ->
                 HiveCard {
@@ -164,15 +166,7 @@ fun SalesScreen(
                     Text("$${"%.2f".format(service.priceCents / 100.0)}", fontSize = 11.sp, color = Good)
                 }
             }
-            Spacer(Modifier.height(6.dp))
-            LabeledField("Service name", serviceName) { serviceName = it }
-            Spacer(Modifier.height(6.dp))
-            LabeledField("Price (USD)", servicePrice) { servicePrice = it }
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = {
-                onAddService(serviceName, servicePrice)
-                serviceName = ""; servicePrice = ""
-            }) { Text("Add service") }
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
