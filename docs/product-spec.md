@@ -20,7 +20,7 @@ Business: **Local Reach Workshop** — a registered business with an EIN. Hive s
 | Capability | Behaviour |
 |---|---|
 | Browser | One browser window per agent, its own URL and history, visible in the Browsers tab, human can take over the screen |
-| Email | One address per agent (AgentMail). Read inbox, send, view sent folder |
+| Email | One shared company inbox (AgentMail); per-agent provisioning not built. Read inbox, send, view sent folder |
 | Memory | Preferences, standing rules, facts, dated work log, **mistake ledger** |
 | Tools | Registered in `ToolRegistry` with an approval class |
 | Hiring | `hire_agent` creates a teammate at any time |
@@ -41,7 +41,9 @@ Android shares one cookie jar across WebViews, and one window is mounted at a ti
 - Autopilot is a loop, not one shift. While the app process is alive and Autopilot is on, the team runs a shift, waits 45 seconds and runs the next one. WorkManager adds a 15-minute shift in the background.
 - Each loop picks the next funnel stage instead of inventing work: deliver paid work → research missing contacts → create an offer → make samples → contact qualified leads → follow up and close → find new leads.
 - A shift that fails every task backs off for five minutes instead of burning credits in a hot loop.
-- The team works in parallel: all planned tasks are dispatched at once. Approval dialogs are serialized; the API calls after them are not.
+- The team works in parallel inside each wave (plan/research/offer/sample, then sales/product, then proofreading). Approval dialogs are serialized; the API calls after them are not. Later waves receive the finished output of earlier ones so bots hand work to each other.
+- A shift must give work to several bots. If the lead's plan does not parse or leaves people out, the standing role plan assigns the stage-relevant specialists plus whoever has waited longest, and always includes the lead's coordination job. A shift must never collapse to one task on one bot.
+- The lead announces the shift plan in chat and DMs every assigned bot before work starts. A message from the owner to the lead becomes a mission for the whole team, not a single reply.
 - Each bot routes to a model by role: lead and product use Super, research/sales/marketing/showcase use Lightning, the proofreader uses DeepSeek. A bot-level override and a Setup switch are available.
 
 ## Memory and mistakes
@@ -55,7 +57,7 @@ Android shares one cookie jar across WebViews, and one window is mounted at a ti
 ## Sales and money
 
 - Pipeline states: `new → qualified → pitched → negotiating → won/lost`, with `paid` and `delivered` flags on each lead.
-- Sales bots research real businesses with `search_web` and `fetch_page`, add them in bulk with `add_leads`, contact them with `send_email`, and record payments with `record_sale`.
+- Sales bots research real businesses with `search_web` and `fetch_page`, add them in bulk with `add_leads`, contact them with `send_email` (approval on by default, capped per turn), and record payments with `record_sale`, which asks first and is the only path that marks a deal paid. `search_web` includes a city/region in the query for local businesses. It uses Google Custom Search when the owner has added a Google API key and `cx`, then DuckDuckGo, then Bing RSS rather than reporting "no results" when a challenge page comes back.
 - After payment the work still has to be done: the bot saves the finished work and marks the job closed with `deliver_work`. A paid, undelivered customer is the loop's first priority.
 - **Progress is measured by sales made** and money collected. Home shows those numbers first.
 - **Stripe links are created only when a buyer is ready to pay** — at the moment of the ask, for that specific job and amount. No pre-generated link inventory, no reuse across customers.
@@ -87,6 +89,9 @@ Agents notice friction (a tool that keeps failing, a missing screen, a repeated 
 - NVIDIA hosted API (`https://integrate.api.nvidia.com/v1`), free-tier first.
 - Current defaults: `nvidia/nemotron-3.5-lightning-30b-a3b`, `nvidia/nemotron-3-super-120b-a12b`, `deepseek-ai/deepseek-v4-flash`.
 - NVIDIA retires ids without notice. `NimClient` reads `/v1/models`, migrates saved ids (including the retired `deepseek-ai/deepseek-v4.1-flash`), falls back to a live model on 404/410, and throws `NimException` instead of returning error text as bot content.
+- These are reasoning models: hidden reasoning counts against `max_tokens`. The planner gets 3,000 tokens and tool calls 8,192. An empty HTTP 200 response is retried at twice the budget and then on another live model; it is never stored as a bot reply.
+- Tool calls use the OpenAI wire protocol: the assistant turn carries its real `tool_calls`, and each result is a `role: "tool"` message with the matching `tool_call_id`. A tool budget that runs out ends with one no-tools wrap-up request, not "Stopped after N tool rounds."
+- Nemotron requests with tools send `chat_template_kwargs: {"force_nonempty_content": true}` so reasoning cannot produce an empty assistant message during tool calling.
 - Default = the cheapest model that can do the job; escalate per task, not per user.
 - `ModelRouter` picks per role; the owner can turn routing off or pin a model per bot.
 - No paid fallback without an explicit setting.
